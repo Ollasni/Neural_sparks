@@ -10,8 +10,8 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from enum import Enum
 
-from pydantic import BaseSettings, Field, validator, SecretStr
-from pydantic.env_settings import SettingsSourceCallable
+from pydantic import Field, validator, SecretStr
+from pydantic_settings import BaseSettings
 
 
 class Environment(str, Enum):
@@ -34,6 +34,7 @@ class ModelProvider(str, Enum):
     """Провайдеры моделей"""
     OPENAI = "openai"
     LOCAL = "local"
+    FINETUNED = "finetuned"
 
 
 @dataclass
@@ -98,11 +99,15 @@ class Settings(BaseSettings):
     
     # Local model settings
     local_api_key: SecretStr = Field(default=None, env="LOCAL_API_KEY")
-    local_base_url: str = Field(default=None, env="LOCAL_BASE_URL")
+    local_base_url: str = Field(default="https://vsjz8fv63q4oju-8000.proxy.runpod.net/v1", env="LOCAL_BASE_URL")
     local_model_name: str = Field("llama4scout", env="LOCAL_MODEL_NAME")
     
     # Model provider selection
-    model_provider: ModelProvider = Field(ModelProvider.LOCAL, env="MODEL_PROVIDER")
+    model_provider: ModelProvider = Field(ModelProvider.FINETUNED, env="MODEL_PROVIDER")
+    
+    # Fine-tuned model settings
+    finetuned_model_path: str = Field("finetuning/phi3-mini", env="FINETUNED_MODEL_PATH")
+    finetuned_adapter_path: str = Field("finetuning/phi3_bird_lora", env="FINETUNED_ADAPTER_PATH")
     
     # =============================================================================
     # Database Configuration
@@ -268,7 +273,14 @@ class Settings(BaseSettings):
                 'model': self.openai_model,
                 'max_tokens': self.openai_max_tokens,
                 'temperature': self.openai_temperature,
-                'base_url': None
+                'base_url': None,
+                'provider': 'openai'
+            }
+        elif self.model_provider == ModelProvider.FINETUNED:
+            return {
+                'model_path': self.finetuned_model_path,
+                'adapter_path': self.finetuned_adapter_path,
+                'provider': 'finetuned'
             }
         else:
             # Получаем base_url из переменных окружения если не задан
@@ -282,7 +294,8 @@ class Settings(BaseSettings):
                 'model': self.local_model_name,
                 'max_tokens': self.openai_max_tokens,  # Используем те же лимиты
                 'temperature': self.openai_temperature,
-                'base_url': base_url
+                'base_url': base_url,
+                'provider': 'local'
             }
     
     # =============================================================================
@@ -294,6 +307,7 @@ class Settings(BaseSettings):
         env_file_encoding = "utf-8"
         case_sensitive = False
         validate_assignment = True
+        extra = "ignore"  # Игнорируем лишние поля из .env
 
 
 class ConfigManager:
@@ -377,7 +391,7 @@ LOCAL_BASE_URL=https://your_model_server.com/v1
 MODEL_PROVIDER=local
 
 # Database
-DATABASE_URL=sqlite:///./bi_demo.db
+DATABASE_URL=postgresql://olgasnissarenko@localhost:5432/bi_demo
 
 # Security
 ENABLE_PII_DETECTION=true

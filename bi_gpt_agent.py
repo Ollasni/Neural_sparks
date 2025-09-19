@@ -4,7 +4,6 @@ BI-GPT Agent: Natural Language to SQL converter for corporate BI
 
 import os
 import re
-import sqlite3
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import hashlib
@@ -197,11 +196,11 @@ class SQLGenerator:
         self.business_dict = BusinessDictionary()
         self.security = SecurityValidator()
         
-        # Улучшенный промпт с примерами few-shot learning
-        self.sql_prompt = """
-Ты эксперт по SQL. Переведи запрос на русском языке в точный SQL запрос. Начинай с SELECT.
+        # Few-shot промпт с примерами (сложный)
+        self.sql_prompt_few_shot = """
+Ты эксперт по PostgreSQL SQL. Переведи запрос на русском языке в точный PostgreSQL SQL запрос.
 
-СХЕМА БАЗЫ ДАННЫХ:
+СХЕМА БАЗЫ ДАННЫХ (PostgreSQL):
 orders: id, customer_id, order_date, amount, status
 customers: id, name, email, registration_date, segment  
 products: id, name, category, price, cost
@@ -211,12 +210,12 @@ inventory: id, product_id, current_stock, warehouse
 БИЗНЕС-ТЕРМИНЫ:
 {business_terms}
 
-ПРИМЕРЫ:
+ПРИМЕРЫ SELECT:
 Запрос: "покажи всех клиентов"
 SQL: SELECT * FROM customers LIMIT 1000;
 
 Запрос: "прибыль за последние 2 дня"
-SQL: SELECT SUM(revenue - costs) as profit FROM sales s JOIN orders o ON s.order_id = o.id WHERE o.order_date >= DATE('now', '-2 days') LIMIT 1000;
+SQL: SELECT SUM(revenue - costs) as profit FROM sales s JOIN orders o ON s.order_id = o.id WHERE o.order_date >= CURRENT_DATE - INTERVAL '2 days' LIMIT 1000;
 
 Запрос: "средний чек клиентов"
 SQL: SELECT AVG(amount) as avg_check FROM orders LIMIT 1000;
@@ -234,7 +233,7 @@ SQL: SELECT c.name, SUM(s.revenue) as total_revenue FROM customers c JOIN orders
 SQL: SELECT p.category, AVG((s.revenue - s.costs) / s.revenue * 100) as avg_margin FROM products p JOIN sales s ON p.id = s.product_id GROUP BY p.category LIMIT 1000;
 
 Запрос: "заказы за сегодня"
-SQL: SELECT o.id, o.amount, c.name FROM orders o JOIN customers c ON o.customer_id = c.id WHERE DATE(o.order_date) = DATE('now') LIMIT 1000;
+SQL: SELECT o.id, o.amount, c.name FROM orders o JOIN customers c ON o.customer_id = c.id WHERE DATE(o.order_date) = CURRENT_DATE LIMIT 1000;
 
 Запрос: "клиенты премиум сегмента"
 SQL: SELECT name, email, registration_date FROM customers WHERE segment = 'Premium' LIMIT 1000;
@@ -242,18 +241,78 @@ SQL: SELECT name, email, registration_date FROM customers WHERE segment = 'Premi
 Запрос: "товары с низкими остатками"
 SQL: SELECT p.name, p.category, i.current_stock FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.current_stock < 10 LIMIT 1000;
 
-ПРАВИЛА:
-1. Только SELECT запросы
-2. Обязательно LIMIT 1000
-3. Используй правильные JOIN между таблицами
-4. Для дат используй DATE('now', '-N days')
-5. Точные имена полей из схемы
-6. Верни только SQL код без объяснений
+ПРИМЕРЫ INSERT:
+Запрос: "добавь нового клиента Иванов Иван"
+SQL: INSERT INTO customers (name, email, segment) VALUES ('Иванов Иван', 'ivan@example.com', 'Standard');
+
+Запрос: "создай заказ на 1000 рублей для клиента 1"
+SQL: INSERT INTO orders (customer_id, amount, status) VALUES (1, 1000, 'pending');
+
+ПРИМЕРЫ UPDATE:
+Запрос: "обнови статус заказа 1 на выполнен"
+SQL: UPDATE orders SET status = 'completed' WHERE id = 1;
+
+Запрос: "увеличь цену всех товаров на 10%"
+SQL: UPDATE products SET price = price * 1.1;
+
+ПРИМЕРЫ DELETE:
+Запрос: "удали заказ с id 1"
+SQL: DELETE FROM orders WHERE id = 1;
+
+Запрос: "удали всех клиентов без заказов"
+SQL: DELETE FROM customers WHERE id NOT IN (SELECT DISTINCT customer_id FROM orders);
+
+Запрос: "покажи топ 10 товаров по выручке"
+SQL: SELECT product_id, SUM(revenue) as total_revenue FROM sales GROUP BY product_id ORDER BY total_revenue DESC LIMIT 10;
+
+ПРАВИЛА POSTGRESQL:
+1. Разрешены SELECT, INSERT, UPDATE, DELETE запросы
+2. Для SELECT обязательно LIMIT 1000
+3. Для UPDATE и DELETE всегда используй WHERE клаузулу
+4. Используй правильные JOIN между таблицами
+5. Для дат используй PostgreSQL функции: CURRENT_DATE, CURRENT_TIMESTAMP, INTERVAL
+6. Точные имена полей из схемы PostgreSQL
+7. В ORDER BY всегда указывай полное имя колонки (например, T1.name, а не T1.)
+8. Проверяй синтаксис ORDER BY - каждая ссылка должна иметь имя колонки
+9. Используй PostgreSQL синтаксис для дат: CURRENT_DATE - INTERVAL 'N days'
+10. Для строк используй одинарные кавычки, для идентификаторов - двойные
+11. НЕ используй EXPLAIN, DESCRIBE, SHOW или другие диагностические команды
+12. НЕ используй SELECT TOP (используй LIMIT)
+13. Верни только PostgreSQL SQL код без объяснений
 
 ЗАПРОС: {user_query}
 SQL:"""
 
-    def generate_sql(self, user_query: str, schema_info: Dict) -> Tuple[str, float]:
+        # One-shot промпт без примеров (простой)
+        self.sql_prompt_one_shot = """
+Ты эксперт по PostgreSQL SQL. Переведи запрос на русском языке в точный PostgreSQL SQL запрос.
+
+СХЕМА БАЗЫ ДАННЫХ (PostgreSQL):
+orders: id, customer_id, order_date, amount, status
+customers: id, name, email, registration_date, segment  
+products: id, name, category, price, cost
+sales: id, order_id, product_id, quantity, revenue, costs
+inventory: id, product_id, current_stock, warehouse
+
+БИЗНЕС-ТЕРМИНЫ:
+{business_terms}
+
+ПРАВИЛА POSTGRESQL:
+1. Разрешены SELECT, INSERT, UPDATE, DELETE запросы
+2. Для SELECT обязательно LIMIT 1000
+3. Для UPDATE и DELETE всегда используй WHERE клаузулу
+4. Используй правильные JOIN между таблицами
+5. Для дат используй PostgreSQL функции: CURRENT_DATE, CURRENT_TIMESTAMP, INTERVAL
+6. Используй PostgreSQL синтаксис для дат: CURRENT_DATE - INTERVAL 'N days'
+7. Для строк используй одинарные кавычки, для идентификаторов - двойные
+8. НЕ используй EXPLAIN, DESCRIBE, SHOW или другие диагностические команды
+9. НЕ используй SELECT TOP (используй LIMIT)
+10. Верни только PostgreSQL SQL код без объяснений
+
+ЗАПРОС: {user_query}
+SQL:"""
+
+    def generate_sql(self, user_query: str, temperature: float = 0.0, max_tokens: int = 400, prompt_mode: str = "few_shot") -> Tuple[str, float]:
         """Генерирует SQL запрос из естественного языка"""
         start_time = time.time()
         
@@ -264,18 +323,24 @@ SQL:"""
             for term in related_terms
         ])
         
+        # Выбираем промпт в зависимости от режима
+        if prompt_mode == "one_shot":
+            selected_prompt = self.sql_prompt_one_shot
+        else:  # few_shot по умолчанию
+            selected_prompt = self.sql_prompt_few_shot
+        
         try:
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=[
-                    {"role": "system", "content": "Ты эксперт по SQL. Отвечай только валидным SQL кодом без объяснений."},
-                    {"role": "user", "content": self.sql_prompt.format(
+                    {"role": "system", "content": "Ты эксперт по PostgreSQL SQL. Отвечай только валидным PostgreSQL SQL кодом без объяснений."},
+                    {"role": "user", "content": selected_prompt.format(
                         business_terms=business_terms_str,
                         user_query=user_query
                     )}
                 ],
-                temperature=0.0,  # Минимальная температура для точности
-                max_tokens=400,   # Больше токенов для сложных запросов
+                temperature=temperature,  # Настраиваемая температура
+                max_tokens=max_tokens,   # Настраиваемое количество токенов
                 top_p=0.1        # Более детерминированные ответы
             )
             
@@ -315,21 +380,63 @@ SQL:"""
         
         sql = ' '.join(sql_lines)
         
+        # Удаляем нежелательные префиксы
+        sql = self._remove_unwanted_prefixes(sql)
+        
         # Убираем точку с запятой в конце если есть
         if sql.endswith(';'):
             sql = sql[:-1]
         
-        # Проверяем что запрос начинается с SELECT
-        if not sql.upper().startswith('SELECT'):
-            raise ValueError("Запрос должен начинаться с SELECT")
+        # Проверяем что запрос начинается с разрешенной команды
+        allowed_commands = ['SELECT', 'INSERT', 'UPDATE', 'DELETE']
+        if not any(sql.upper().startswith(cmd) for cmd in allowed_commands):
+            raise ValueError(f"Запрос должен начинаться с одной из команд: {', '.join(allowed_commands)}")
+        
+        # Базовая валидация структуры
+        if sql.upper().startswith('SELECT') and 'FROM' not in sql.upper():
+            raise ValueError("SELECT запрос должен содержать FROM")
+        
+        # Исправляем неполные ORDER BY клаузулы
+        sql = self._fix_order_by_clause(sql)
         
         # Добавляем LIMIT если его нет
         if 'LIMIT' not in sql.upper():
             sql += ' LIMIT 1000'
         
-        # Базовая валидация структуры
-        if 'FROM' not in sql.upper():
-            raise ValueError("SQL запрос должен содержать FROM")
+        return sql
+    
+    def _fix_order_by_clause(self, sql: str) -> str:
+        """Исправляет неполные ORDER BY клаузулы"""
+        import re
+        
+        # Ищем ORDER BY клаузулы с неполными ссылками на колонки
+        order_by_pattern = r'ORDER\s+BY\s+([^LIMIT]+?)(?=\s+LIMIT|\s*$)'
+        match = re.search(order_by_pattern, sql, re.IGNORECASE | re.DOTALL)
+        
+        if match:
+            order_by_part = match.group(1).strip()
+            
+            # Проверяем на неполные ссылки типа "T1." без указания колонки
+            incomplete_refs = re.findall(r'\b\w+\.\s*(?=\s*[,LIMIT]|\s*$)', order_by_part)
+            
+            if incomplete_refs:
+                # Удаляем неполные ссылки
+                for incomplete_ref in incomplete_refs:
+                    # Удаляем неполную ссылку и запятую перед ней если есть
+                    order_by_part = re.sub(rf'\s*{re.escape(incomplete_ref)}\s*,?\s*', '', order_by_part)
+                    order_by_part = re.sub(r',\s*$', '', order_by_part)  # Убираем лишние запятые
+                
+                # Если ORDER BY стал пустым, удаляем всю клаузулу
+                if not order_by_part.strip():
+                    sql = re.sub(r'\s*ORDER\s+BY\s+[^LIMIT]+?(?=\s+LIMIT|\s*$)', '', sql, flags=re.IGNORECASE | re.DOTALL)
+                else:
+                    # Заменяем исправленную ORDER BY клаузулу
+                    sql = re.sub(
+                        r'ORDER\s+BY\s+[^LIMIT]+?(?=\s+LIMIT|\s*$)',
+                        f'ORDER BY {order_by_part.strip()}',
+                        sql,
+                        flags=re.IGNORECASE | re.DOTALL
+                    )
         
         return sql
 
@@ -337,7 +444,7 @@ SQL:"""
 class BIGPTAgent:
     """Основной класс BI-GPT агента"""
     
-    def __init__(self, db_path: str = "bi_demo.db", api_key: str = None, base_url: str = None, use_finetuned: bool = False):
+    def __init__(self, api_key: str = None, base_url: str = None, use_finetuned: bool = False, model_provider: str = None):
         # Улучшенная инициализация с новыми системами
         if ENHANCED_FEATURES_AVAILABLE:
             try:
@@ -346,7 +453,6 @@ class BIGPTAgent:
                 
                 # Используем URL базы данных из настроек
                 self.db_url = self.settings.database_url if self.settings else f"postgresql://olgasnissarenko@localhost:5432/bi_demo"
-                self.db_path = db_path  # Оставляем для совместимости
                 
                 # Валидация конфигурации
                 config_errors = validate_config()
@@ -358,37 +464,67 @@ class BIGPTAgent:
             except Exception as e:
                 # Fallback если новые системы не работают
                 logger.warning(f"Enhanced initialization failed, using legacy mode: {e}")
-                self.db_path = db_path
+                self.db_url = f"postgresql://olgasnissarenko@localhost:5432/bi_demo"
                 self.settings = None
                 self.logger = logger
         else:
-            self.db_path = db_path
             self.db_url = f"postgresql://olgasnissarenko@localhost:5432/bi_demo"
             self.settings = None
             self.logger = logger
         
-        # Инициализация генератора SQL - с поддержкой fine-tuned модели
+        # Инициализация генератора SQL с поддержкой выбора модели
         self.use_finetuned = use_finetuned
-        if use_finetuned:
+        self.model_provider = model_provider
+        
+        # Определяем провайдера модели
+        if model_provider:
+            # Если явно указан провайдер, используем его
+            provider = model_provider
+            print(f"🔧 Используем явно указанный провайдер: {provider}")
+        elif ENHANCED_FEATURES_AVAILABLE and self.settings:
+            model_config = self.settings.get_model_config()
+            provider = model_config.get('provider', 'openai')
+            print(f"🔧 Используем провайдер из настроек: {provider}")
+        else:
+            provider = 'openai' if not use_finetuned else 'finetuned'
+            print(f"🔧 Используем провайдер по умолчанию: {provider}")
+        
+        if provider == 'finetuned' or use_finetuned:
             # Используем fine-tuned модель напрямую
             try:
                 from finetuned_sql_generator import FineTunedSQLGenerator
-                self.sql_generator = FineTunedSQLGenerator()
+                if ENHANCED_FEATURES_AVAILABLE and self.settings:
+                    model_config = self.settings.get_model_config()
+                    self.sql_generator = FineTunedSQLGenerator(
+                        model_path=model_config.get('model_path', 'finetuning/phi3-mini'),
+                        adapter_path=model_config.get('adapter_path', 'finetuning/phi3_bird_lora')
+                    )
+                else:
+                    self.sql_generator = FineTunedSQLGenerator()
                 print("✅ Используется fine-tuned модель Phi-3 + LoRA")
+                self.use_finetuned = True
             except Exception as e:
                 print(f"❌ Ошибка загрузки fine-tuned модели: {e}")
                 print("⚠️  Переключаемся на API модель...")
                 if base_url:
                     self.sql_generator = SQLGenerator(api_key, base_url)
+                    print(f"✅ Используется пользовательская API модель: {base_url}")
                 else:
-                    self.sql_generator = SQLGenerator(api_key or os.getenv("OPENAI_API_KEY"))
+                    print("❌ Не удалось определить API модель для fallback")
+                    raise Exception("Fine-tuned модель недоступна и нет настроек для API модели")
                 self.use_finetuned = False
+        elif provider == 'openai':
+            # Используем OpenAI GPT-4
+            self.sql_generator = SQLGenerator(api_key or os.getenv("OPENAI_API_KEY"))
+            print("✅ Используется OpenAI GPT-4")
         else:
-            # Используем API модель (OpenAI или локальную через API)
+            # Используем пользовательскую API модель
             if base_url:
                 self.sql_generator = SQLGenerator(api_key, base_url)
+                print(f"✅ Используется пользовательская API модель: {base_url}")
             else:
-                self.sql_generator = SQLGenerator(api_key or os.getenv("OPENAI_API_KEY"))
+                print("❌ Не указан base_url для пользовательской API модели")
+                raise Exception("Для пользовательской API модели требуется base_url")
             
         self.security = SecurityValidator()
         self.metrics_history = []
@@ -398,7 +534,7 @@ class BIGPTAgent:
         
         if hasattr(self, 'logger'):
             self.logger.info(f"BI-GPT Agent initialized successfully", extra={
-                'database_path': self.db_path,
+                'database_url': self.db_url,
                 'enhanced_features': ENHANCED_FEATURES_AVAILABLE,
                 'use_finetuned': self.use_finetuned
             })
@@ -518,104 +654,14 @@ class BIGPTAgent:
             print("✅ PostgreSQL демо база данных инициализирована")
             
         except psycopg2.Error as e:
-            print(f"⚠️  Ошибка подключения к PostgreSQL: {e}")
-            print("🔄 Fallback: используем SQLite")
-            # Fallback на SQLite если PostgreSQL недоступен
-            self._init_sqlite_fallback()
+            print(f"❌ Ошибка подключения к PostgreSQL: {e}")
+            print("💡 Убедитесь, что PostgreSQL запущен и доступен по адресу:", self.db_url)
+            raise Exception(f"Не удалось подключиться к PostgreSQL: {e}")
         except Exception as e:
-            print(f"⚠️  Общая ошибка базы данных: {e}")
-            print("🔄 Fallback: используем SQLite")
-            self._init_sqlite_fallback()
+            print(f"❌ Ошибка инициализации базы данных: {e}")
+            raise Exception(f"Ошибка инициализации PostgreSQL: {e}")
     
-    def _init_sqlite_fallback(self):
-        """Fallback инициализация SQLite если PostgreSQL недоступен"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        # Создание таблиц (SQLite синтаксис)
-        cursor.executescript("""
-        CREATE TABLE IF NOT EXISTS customers (
-            id INTEGER PRIMARY KEY,
-            name TEXT NOT NULL,
-            email TEXT UNIQUE,
-            registration_date DATE,
-            segment TEXT
-        );
-        
-        CREATE TABLE IF NOT EXISTS products (
-            id INTEGER PRIMARY KEY,
-            name TEXT NOT NULL,
-            category TEXT,
-            price DECIMAL(10,2),
-            cost DECIMAL(10,2)
-        );
-        
-        CREATE TABLE IF NOT EXISTS orders (
-            id INTEGER PRIMARY KEY,
-            customer_id INTEGER,
-            order_date DATE,
-            amount DECIMAL(10,2),
-            status TEXT,
-            FOREIGN KEY (customer_id) REFERENCES customers(id)
-        );
-        
-        CREATE TABLE IF NOT EXISTS sales (
-            id INTEGER PRIMARY KEY,
-            order_id INTEGER,
-            product_id INTEGER,
-            quantity INTEGER,
-            revenue DECIMAL(10,2),
-            costs DECIMAL(10,2),
-            FOREIGN KEY (order_id) REFERENCES orders(id),
-            FOREIGN KEY (product_id) REFERENCES products(id)
-        );
-        
-        CREATE TABLE IF NOT EXISTS inventory (
-            id INTEGER PRIMARY KEY,
-            product_id INTEGER,
-            current_stock INTEGER,
-            warehouse TEXT,
-            FOREIGN KEY (product_id) REFERENCES products(id)
-        );
-        """)
-        
-        # Вставка тестовых данных
-        cursor.executescript("""
-        INSERT OR IGNORE INTO customers VALUES 
-        (1, 'Иван Иванов', 'ivan@email.com', '2023-01-15', 'Premium'),
-        (2, 'Мария Петрова', 'maria@email.com', '2023-02-20', 'Standard'),
-        (3, 'Алексей Сидоров', 'alex@email.com', '2023-03-10', 'Premium');
-        
-        INSERT OR IGNORE INTO products VALUES
-        (1, 'Ноутбук ASUS', 'Электроника', 50000, 35000),
-        (2, 'Мышь Logitech', 'Электроника', 2000, 1200),
-        (3, 'Клавиатура', 'Электроника', 3000, 2000);
-        
-        INSERT OR IGNORE INTO orders VALUES
-        (1, 1, '2024-09-15', 52000, 'completed'),
-        (2, 2, '2024-09-14', 5000, 'completed'),
-        (3, 3, '2024-09-13', 50000, 'pending');
-        
-        INSERT OR IGNORE INTO sales VALUES
-        (1, 1, 1, 1, 50000, 35000),
-        (2, 1, 2, 1, 2000, 1200),
-        (3, 2, 2, 1, 2000, 1200),
-        (4, 2, 3, 1, 3000, 2000),
-        (5, 3, 1, 1, 50000, 35000);
-        
-        INSERT OR IGNORE INTO inventory VALUES
-        (1, 1, 10, 'Москва'),
-        (2, 2, 50, 'Москва'),
-        (3, 3, 30, 'СПб');
-        """)
-        
-        conn.commit()
-        conn.close()
-        
-        # Обновляем URL для SQLite
-        self.db_url = f"sqlite:///{self.db_path}"
-        print("✅ SQLite fallback база данных инициализирована")
-    def process_query(self, user_query: str, user_id: str = None, session_id: str = None) -> Dict[str, Any]:
+    def process_query(self, user_query: str, user_id: str = None, session_id: str = None, temperature: float = 0.0, max_tokens: int = 400, prompt_mode: str = "few_shot") -> Dict[str, Any]:
         """Обрабатывает пользовательский запрос"""
         start_time = time.time()
         request_id = str(uuid.uuid4())[:8]
@@ -667,40 +713,70 @@ class BIGPTAgent:
             }
         
         # Генерация SQL с повторными попытками
-        sql_query, gen_time = self._generate_sql_with_retry(user_query, max_retries=2)
+        sql_query, gen_time, attempts_info = self._generate_sql_with_retry(user_query, max_retries=2, temperature=temperature, max_tokens=max_tokens, prompt_mode=prompt_mode)
         
         if not sql_query:
             return {
                 'error': 'Не удалось сгенерировать валидный SQL запрос',
                 'sql': '',
                 'results': None,
-                'metrics': None
+                'metrics': None,
+                'attempts_info': attempts_info
             }
         
-        # Проверка безопасности SQL
-        is_safe, security_errors = self.security.validate_sql(sql_query)
-        if not is_safe:
-            return {
-                'error': f'Небезопасный SQL: {"; ".join(security_errors)}',
-                'sql': sql_query,
-                'results': None,
-                'metrics': None
-            }
+        # Проверка безопасности SQL с расширенной валидацией
+        if ENHANCED_FEATURES_AVAILABLE:
+            try:
+                from advanced_sql_validator import validate_sql_query
+                sql_analysis = validate_sql_query(sql_query, {
+                    'user_id': user_id,
+                    'session_id': session_id,
+                    'request_id': request_id
+                })
+                
+                # Проверяем только критические ошибки
+                if sql_analysis.validation_result == ValidationResult.BLOCKED:
+                    return {
+                        'error': f'SQL заблокирован: {"; ".join(sql_analysis.errors[:3])}',
+                        'sql': sql_query,
+                        'results': None,
+                        'metrics': None,
+                        'risk_analysis': sql_analysis
+                    }
+                
+                # Сохраняем анализ риска для отображения
+                risk_analysis = sql_analysis
+            except Exception as e:
+                logger.warning(f"Enhanced validation failed, using basic validation: {e}")
+                # Fallback на базовую валидацию
+                is_safe, security_errors = self.security.validate_sql(sql_query)
+                if not is_safe:
+                    return {
+                        'error': f'Небезопасный SQL: {"; ".join(security_errors)}',
+                        'sql': sql_query,
+                        'results': None,
+                        'metrics': None
+                    }
+                risk_analysis = None
+        else:
+            # Базовая валидация
+            is_safe, security_errors = self.security.validate_sql(sql_query)
+            if not is_safe:
+                return {
+                    'error': f'Небезопасный SQL: {"; ".join(security_errors)}',
+                    'sql': sql_query,
+                    'results': None,
+                    'metrics': None
+                }
+            risk_analysis = None
         
         # Выполнение запроса
         try:
-            # Определяем тип базы данных
-            if self.db_url.startswith('postgresql'):
-                # PostgreSQL - используем SQLAlchemy для избежания предупреждений pandas
-                from sqlalchemy import create_engine
-                engine = create_engine(self.db_url)
-                results_df = pd.read_sql_query(sql_query, engine)
-                engine.dispose()
-            else:
-                # SQLite fallback
-                conn = sqlite3.connect(self.db_path)
-                results_df = pd.read_sql_query(sql_query, conn)
-                conn.close()
+            # Используем PostgreSQL с SQLAlchemy
+            from sqlalchemy import create_engine
+            engine = create_engine(self.db_url)
+            results_df = pd.read_sql_query(sql_query, engine)
+            engine.dispose()
             
             execution_time = time.time() - start_time
             
@@ -722,7 +798,9 @@ class BIGPTAgent:
                 'results': results_df,
                 'metrics': metrics,
                 'business_terms': business_terms,
-                'explanation': self._generate_explanation(user_query, results_df)
+                'explanation': self._generate_explanation(user_query, results_df),
+                'risk_analysis': risk_analysis,
+                'attempts_info': attempts_info
             }
             
         except Exception as e:
@@ -731,7 +809,8 @@ class BIGPTAgent:
                 'error': f'Ошибка выполнения: {str(e)}',
                 'sql': sql_query,
                 'results': None,
-                'metrics': None
+                'metrics': None,
+                'attempts_info': attempts_info
             }
     
     def _generate_explanation(self, query: str, results: pd.DataFrame) -> str:
@@ -754,40 +833,112 @@ class BIGPTAgent:
         
         return explanation.strip()
     
-    def _generate_sql_with_retry(self, user_query: str, max_retries: int = 2) -> Tuple[str, float]:
+    def _remove_unwanted_prefixes(self, sql_query: str) -> str:
+        """Удаляет нежелательные префиксы из SQL запроса"""
+        # Список нежелательных префиксов (в порядке от длинных к коротким)
+        unwanted_prefixes = [
+            'EXPLAIN QUERY PLAN ',
+            'WITH RECURSIVE ',
+            'EXPLAIN ',
+            'DESCRIBE ',
+            'DESC ',
+            'SHOW ',
+            'WITH ',
+        ]
+        
+        # Проверяем и удаляем префиксы
+        original_query = sql_query
+        for prefix in unwanted_prefixes:
+            if sql_query.upper().startswith(prefix.upper()):
+                sql_query = sql_query[len(prefix):].strip()
+                self.logger.info(f"Удален префикс '{prefix}' из SQL: {original_query[:50]}...")
+                break
+        
+        # Специальная обработка для SELECT TOP (SQL Server синтаксис)
+        if re.match(r'^SELECT\s+TOP\s+\d+\s+', sql_query, re.IGNORECASE):
+            match = re.match(r'^SELECT\s+TOP\s+(\d+)\s+(.*)', sql_query, re.IGNORECASE | re.DOTALL)
+            if match:
+                limit_num = match.group(1)
+                rest_query = match.group(2)
+                sql_query = f"SELECT {rest_query} LIMIT {limit_num}"
+                self.logger.info(f"Заменен SELECT TOP {limit_num} на SELECT ... LIMIT {limit_num}")
+        
+        return sql_query
+    
+    def _generate_sql_with_retry(self, user_query: str, max_retries: int = 2, temperature: float = 0.0, max_tokens: int = 400, prompt_mode: str = "few_shot") -> Tuple[str, float, List[Dict]]:
         """Генерирует SQL с повторными попытками при ошибках"""
         total_time = 0
         last_error = None
+        attempts_info = []
         
         for attempt in range(max_retries + 1):
+            attempt_start = time.time()
             try:
-                sql_query, gen_time = self.sql_generator.generate_sql(user_query, {})
+                # Вызываем generate_sql в зависимости от типа генератора
+                if hasattr(self.sql_generator, 'generate_sql'):
+                    # Проверяем сигнатуру метода
+                    import inspect
+                    sig = inspect.signature(self.sql_generator.generate_sql)
+                    params = list(sig.parameters.keys())
+                    
+                    if len(params) >= 4:  # SQLGenerator: (self, user_query, temperature, max_tokens, prompt_mode)
+                        sql_query, gen_time = self.sql_generator.generate_sql(user_query, temperature, max_tokens, prompt_mode)
+                    else:  # FineTunedSQLGenerator: (self, user_query, schema_info)
+                        sql_query, gen_time = self.sql_generator.generate_sql(user_query)
+                else:
+                    raise AttributeError("SQL generator does not have generate_sql method")
                 total_time += gen_time
                 
                 if sql_query:
-                    # Проверяем что SQL можно выполнить
-                    if self.db_url.startswith('postgresql'):
-                        # PostgreSQL - используем SQLAlchemy
+                    # Очищаем SQL от нежелательных префиксов перед валидацией
+                    cleaned_sql = self._remove_unwanted_prefixes(sql_query)
+                    if cleaned_sql != sql_query:
+                        self.logger.info(f"SQL очищен: '{sql_query[:50]}...' → '{cleaned_sql[:50]}...'")
+                    
+                    # Проверяем что SQL можно выполнить в PostgreSQL
+                    validation_error = None
+                    try:
                         from sqlalchemy import create_engine, text
                         engine = create_engine(self.db_url)
                         with engine.connect() as connection:
-                            connection.execute(text("EXPLAIN " + sql_query))
+                            connection.execute(text("EXPLAIN " + cleaned_sql))
                         engine.dispose()
-                    else:
-                        # SQLite fallback
-                        conn = sqlite3.connect(self.db_path)
-                        cursor = conn.cursor()
-                        cursor.execute("EXPLAIN QUERY PLAN " + sql_query)
-                        conn.close()
-                    return sql_query, total_time
+                    except Exception as validation_e:
+                        validation_error = str(validation_e)
+                        raise validation_e
+                    
+                    # Успешная попытка
+                    attempts_info.append({
+                        'attempt': attempt + 1,
+                        'success': True,
+                        'sql': cleaned_sql,
+                        'generation_time': gen_time,
+                        'total_time': total_time,
+                        'error': None
+                    })
+                    return cleaned_sql, total_time, attempts_info
                     
             except Exception as e:
                 last_error = str(e)
+                attempt_time = time.time() - attempt_start
+                total_time += attempt_time
+                
+                # Записываем информацию о неудачной попытке
+                attempts_info.append({
+                    'attempt': attempt + 1,
+                    'success': False,
+                    'sql': None,
+                    'generation_time': attempt_time,
+                    'total_time': total_time,
+                    'error': str(e),
+                    'error_type': type(e).__name__
+                })
+                
                 logger.warning(f"Попытка {attempt + 1} не удалась: {e}")
                 continue
         
         logger.error(f"Все попытки генерации SQL не удались. Последняя ошибка: {last_error}")
-        return "", total_time
+        return "", total_time, attempts_info
     
     def get_performance_metrics(self) -> Dict[str, float]:
         """Возвращает метрики производительности"""

@@ -12,7 +12,6 @@ from typing import Dict, List, Any, Optional, Tuple, Set
 from dataclasses import dataclass, field
 from datetime import datetime
 from collections import defaultdict
-import sqlite3
 
 # Опциональный импорт для векторного поиска
 try:

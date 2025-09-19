@@ -113,6 +113,74 @@ def display_metrics_dashboard(agent):
             delta=None
         )
 
+def display_risk_analysis(risk_analysis):
+    """Отображает анализ риска SQL запроса"""
+    if not risk_analysis:
+        return
+    
+    from advanced_sql_validator import RiskLevel
+    
+    # Получаем иконку и цвет для уровня риска
+    risk_icon = "❓"
+    risk_color = "#6c757d"
+    risk_text = "Неизвестно"
+    
+    if hasattr(risk_analysis, 'risk_level'):
+        risk_level = risk_analysis.risk_level
+        if risk_level == RiskLevel.LOW:
+            risk_icon = "✅"
+            risk_color = "#28a745"
+            risk_text = "Низкий риск"
+        elif risk_level == RiskLevel.MEDIUM:
+            risk_icon = "⚠️"
+            risk_color = "#ffc107"
+            risk_text = "Средний риск"
+        elif risk_level == RiskLevel.HIGH:
+            risk_icon = "🔶"
+            risk_color = "#fd7e14"
+            risk_text = "Высокий риск"
+        elif risk_level == RiskLevel.CRITICAL:
+            risk_icon = "🚨"
+            risk_color = "#dc3545"
+            risk_text = "Критический риск"
+    
+    # Отображаем уровень риска
+    st.markdown(f"""
+    <div style="background-color: {risk_color}20; border-left: 4px solid {risk_color}; padding: 10px; margin: 10px 0; border-radius: 4px;">
+        <h4 style="margin: 0; color: {risk_color};">
+            {risk_icon} Уровень риска: {risk_text}
+        </h4>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Показываем детали анализа
+    if hasattr(risk_analysis, 'warnings') and risk_analysis.warnings:
+        st.warning("⚠️ Предупреждения:")
+        for warning in risk_analysis.warnings[:3]:  # Показываем первые 3
+            st.write(f"• {warning}")
+    
+    if hasattr(risk_analysis, 'errors') and risk_analysis.errors:
+        st.error("❌ Ошибки:")
+        for error in risk_analysis.errors[:3]:  # Показываем первые 3
+            st.write(f"• {error}")
+    
+    # Показываем метрики сложности
+    if hasattr(risk_analysis, 'complexity_score'):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Сложность", risk_analysis.complexity_score)
+        with col2:
+            st.metric("JOIN'ов", getattr(risk_analysis, 'join_count', 0))
+        with col3:
+            st.metric("Подзапросов", getattr(risk_analysis, 'subquery_count', 0))
+    
+    # Показываем рекомендации
+    if hasattr(risk_analysis, 'recommendations') and risk_analysis.recommendations:
+        st.info("💡 Рекомендации:")
+        for rec in risk_analysis.recommendations[:3]:  # Показываем первые 3
+            st.write(f"• {rec}")
+
+
 def create_result_visualization(df, query_type):
     """Создает визуализацию результатов"""
     if df.empty:
@@ -172,6 +240,56 @@ def main():
             ["Llama 4 API (RunPod)", "Local Fine-tuned (Phi-3)"],
             index=0
         )
+        
+        # Настройки модели
+        st.subheader("Model Parameters")
+        temperature = st.slider(
+            "Temperature", 
+            min_value=0.0, 
+            max_value=2.0, 
+            value=0.0, 
+            step=0.1,
+            help="Контролирует случайность генерации. 0.0 = детерминированно, 2.0 = очень случайно"
+        )
+        
+        max_tokens = st.slider(
+            "Max Tokens", 
+            min_value=50, 
+            max_value=1000, 
+            value=400, 
+            step=50,
+            help="Максимальное количество токенов в ответе"
+        )
+        
+        # Сохраняем параметры в session state
+        st.session_state['temperature'] = temperature
+        st.session_state['max_tokens'] = max_tokens
+        
+        # Быстрые настройки
+        st.subheader("Quick Settings")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("🎯 Precise (0.0, 200)", help="Детерминированная генерация"):
+                st.session_state['temperature'] = 0.0
+                st.session_state['max_tokens'] = 200
+                st.rerun()
+            
+            if st.button("⚖️ Balanced (0.3, 400)", help="Сбалансированная генерация"):
+                st.session_state['temperature'] = 0.3
+                st.session_state['max_tokens'] = 400
+                st.rerun()
+        
+        with col2:
+            if st.button("🎨 Creative (0.7, 600)", help="Креативная генерация"):
+                st.session_state['temperature'] = 0.7
+                st.session_state['max_tokens'] = 600
+                st.rerun()
+            
+            if st.button("🚀 Complex (0.1, 800)", help="Для сложных запросов"):
+                st.session_state['temperature'] = 0.1
+                st.session_state['max_tokens'] = 800
+                st.rerun()
         
         # Настройки загружаются из .env файла
         env_url = os.getenv("LOCAL_BASE_URL")
@@ -283,7 +401,10 @@ LOCAL_BASE_URL=your_api_url""")
     if process_btn and user_query.strip():
         with st.spinner("Processing query and generating SQL..."):
             start_time = time.time()
-            result = agent.process_query(user_query)
+            # Получаем параметры модели из session state
+            temperature = st.session_state.get('temperature', 0.0)
+            max_tokens = st.session_state.get('max_tokens', 400)
+            result = agent.process_query(user_query, temperature=temperature, max_tokens=max_tokens)
             processing_time = time.time() - start_time
         
         # Отображение результатов
@@ -291,8 +412,15 @@ LOCAL_BASE_URL=your_api_url""")
             st.error(f"Error: {result['error']}")
             if result.get('sql'):
                 st.code(result['sql'], language='sql')
+            # Показываем анализ риска даже для ошибок
+            if result.get('risk_analysis'):
+                display_risk_analysis(result['risk_analysis'])
         else:
             st.success("Query executed successfully")
+            
+            # Отображаем анализ риска перед вкладками
+            if result.get('risk_analysis'):
+                display_risk_analysis(result['risk_analysis'])
             
             # Вкладки для результатов
             tab1, tab2, tab3, tab4 = st.tabs(["Results", "SQL", "Visualization", "Analysis"])
@@ -317,6 +445,13 @@ LOCAL_BASE_URL=your_api_url""")
             with tab2:
                 st.subheader("Generated SQL")
                 st.code(result['sql'], language='sql')
+                
+                # Показываем параметры модели
+                col_param1, col_param2 = st.columns(2)
+                with col_param1:
+                    st.metric("Temperature", f"{temperature:.1f}")
+                with col_param2:
+                    st.metric("Max Tokens", max_tokens)
                 
                 # Информация о бизнес-терминах
                 if result.get('business_terms'):

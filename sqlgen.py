@@ -1,7 +1,7 @@
 """
 SQL Generator Module for BI-GPT Agent
 Детерминированная генерация SQL из структурированного плана запроса
-Поддержка PostgreSQL и SQLite синтаксиса
+Поддержка PostgreSQL синтаксиса
 """
 
 import logging
@@ -18,7 +18,6 @@ logger = logging.getLogger(__name__)
 class SQLDialect(Enum):
     """SQL диалекты"""
     POSTGRESQL = "postgresql"
-    SQLITE = "sqlite"
     MYSQL = "mysql"
 
 
@@ -49,14 +48,6 @@ class SQLGenerator:
                 'date_sub': lambda date_expr, interval: f"{date_expr} - INTERVAL '{interval}'",
                 'limit': lambda limit: f"LIMIT {limit}",
                 'quote_char': '"'
-            },
-            SQLDialect.SQLITE: {
-                'date_current': "DATE('now')",
-                'datetime_current': "DATETIME('now')",
-                'date_add': lambda date_expr, interval: f"DATE({date_expr}, '+{interval}')",
-                'date_sub': lambda date_expr, interval: f"DATE({date_expr}, '-{interval}')",
-                'limit': lambda limit: f"LIMIT {limit}",
-                'quote_char': '`'
             },
             SQLDialect.MYSQL: {
                 'date_current': 'CURDATE()',
@@ -485,7 +476,7 @@ def main():
     parser.add_argument('--query', type=str, required=True, help='Query to generate SQL for')
     parser.add_argument('--schema', type=str, default='schema.json', help='Schema file')
     parser.add_argument('--dialect', type=str, default='postgresql', 
-                       choices=['postgresql', 'sqlite', 'mysql'], help='SQL dialect')
+                       choices=['postgresql', 'mysql'], help='SQL dialect')
     parser.add_argument('--verbose', action='store_true', help='Enable verbose logging')
     
     args = parser.parse_args()

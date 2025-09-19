@@ -76,8 +76,7 @@ class StructuredFormatter(jsonlogger.JsonFormatter):
     
     def __init__(self):
         super().__init__(
-            fmt='%(timestamp)s %(name)s %(levelname)s %(message)s',
-            json_ensure_ascii=False
+            fmt='%(timestamp)s %(name)s %(levelname)s %(message)s'
         )
     
     def add_fields(self, log_record, record, message_dict):
@@ -151,7 +150,12 @@ class LoggerManager:
         
         # Настраиваем корневой логгер
         root_logger = logging.getLogger()
-        root_logger.setLevel(self.settings.log_level.value)
+        # Обрабатываем log_level как строку или enum
+        if hasattr(self.settings.log_level, 'value'):
+            log_level = self.settings.log_level.value
+        else:
+            log_level = str(self.settings.log_level)
+        root_logger.setLevel(log_level)
         
         # Очищаем существующие хендлеры
         root_logger.handlers.clear()
@@ -200,7 +204,12 @@ class LoggerManager:
         formatter = StructuredFormatter()
         file_handler.setFormatter(formatter)
         file_handler.addFilter(ContextFilter())
-        file_handler.setLevel(self.settings.log_level.value)
+        # Обрабатываем log_level как строку или enum
+        if hasattr(self.settings.log_level, 'value'):
+            log_level = self.settings.log_level.value
+        else:
+            log_level = str(self.settings.log_level)
+        file_handler.setLevel(log_level)
         
         logger.addHandler(file_handler)
     

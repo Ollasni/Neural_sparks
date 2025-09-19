@@ -1,5 +1,11 @@
 import streamlit as st
 from typing import Optional
+import sys
+import os
+
+# Добавляем путь к модулю app
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+
 from app.config.settings import UIText
 from app.infrastructure.db.postgres import PostgresConfig, make_postgres_engine
 from app.application.use_cases import GetSchemaOverviewUC
@@ -28,7 +34,7 @@ port = st.sidebar.number_input("Port", min_value=1, max_value=65535, value=5432,
 user = st.sidebar.text_input("Username", value="postgres")
 password = st.sidebar.text_input("Password", type="password", value="")
 database = st.sidebar.text_input("Database Name", value="postgres")
-sslmode = st.sidebar.selectbox("SSL Mode", options=["", "require", "disable"], index=0, help="Опционально")
+sslmode = st.sidebar.selectbox("SSL Mode", options=["", "require", "disable"], index=2, help="Опционально")
 
 connect_clicked = st.sidebar.button("Подключиться")
 

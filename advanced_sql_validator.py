@@ -76,7 +76,7 @@ class AdvancedSQLValidator:
         # Расширенные списки опасных паттернов
         self.dangerous_keywords = {
             'critical': [
-                'DROP', 'DELETE', 'TRUNCATE', 'ALTER', 'CREATE', 'INSERT', 'UPDATE',
+                'DROP', 'TRUNCATE', 'ALTER', 'CREATE',
                 'EXEC', 'EXECUTE', 'SHUTDOWN', 'KILL', 'GRANT', 'REVOKE'
             ],
             'high': [
@@ -86,6 +86,9 @@ class AdvancedSQLValidator:
             'medium': [
                 'INFORMATION_SCHEMA', 'SHOW TABLES', 'SHOW DATABASES',
                 'DESCRIBE', 'EXPLAIN', 'SYSTEM'
+            ],
+            'allowed': [
+                'SELECT', 'INSERT', 'UPDATE', 'DELETE'
             ]
         }
         
@@ -140,7 +143,7 @@ class AdvancedSQLValidator:
             parsed = self._parse_sql(cleaned_query)
             if not parsed:
                 analysis.is_valid = False
-                analysis.errors.append("Не удалось распарсить SQL запрос")
+                analysis.errors.append("Не удалось распарсить PostgreSQL SQL запрос")
                 analysis.risk_level = RiskLevel.HIGH
                 analysis.validation_result = ValidationResult.BLOCKED
                 return analysis
@@ -150,7 +153,8 @@ class AdvancedSQLValidator:
             self._check_sql_injection(analysis)
             self._analyze_complexity(analysis, parsed)
             self._check_schema_compliance(analysis, parsed)
-            self._check_performance_risks(analysis, parsed)
+            self._check_performance_risks(analysis)
+            self._check_order_by_syntax(analysis)
             self._analyze_functions(analysis, parsed)
             
             # Определение финального результата
@@ -175,7 +179,7 @@ class AdvancedSQLValidator:
         return analysis
     
     def _clean_query(self, query: str) -> str:
-        """Очищает SQL запрос от лишних символов"""
+        """Очищает PostgreSQL SQL запрос от лишних символов"""
         # Удаляем лишние пробелы и переносы строк
         query = re.sub(r'\s+', ' ', query.strip())
         
@@ -183,10 +187,42 @@ class AdvancedSQLValidator:
         query = re.sub(r'--.*$', '', query, flags=re.MULTILINE)
         query = re.sub(r'/\*.*?\*/', '', query, flags=re.DOTALL)
         
+        # Удаляем нежелательные префиксы
+        query = self._remove_unwanted_prefixes(query)
+        
         return query.strip()
     
+    def _remove_unwanted_prefixes(self, query: str) -> str:
+        """Удаляет нежелательные префиксы из SQL запроса"""
+        unwanted_prefixes = [
+            'EXPLAIN QUERY PLAN ',
+            'WITH RECURSIVE ',
+            'EXPLAIN ',
+            'DESCRIBE ',
+            'DESC ',
+            'SHOW ',
+            'WITH ',
+        ]
+        
+        for prefix in unwanted_prefixes:
+            if query.upper().startswith(prefix.upper()):
+                query = query[len(prefix):].strip()
+                logger.warning(f"Обнаружен нежелательный префикс '{prefix}' в SQL запросе")
+                break
+        
+        # Специальная обработка для SELECT TOP (SQL Server синтаксис)
+        if re.match(r'^SELECT\s+TOP\s+\d+\s+', query, re.IGNORECASE):
+            match = re.match(r'^SELECT\s+TOP\s+(\d+)\s+(.*)', query, re.IGNORECASE | re.DOTALL)
+            if match:
+                limit_num = match.group(1)
+                rest_query = match.group(2)
+                query = f"SELECT {rest_query} LIMIT {limit_num}"
+                logger.warning(f"Заменен SELECT TOP {limit_num} на SELECT ... LIMIT {limit_num}")
+        
+        return query
+    
     def _parse_sql(self, query: str) -> Optional[sqlparse.sql.Statement]:
-        """Парсит SQL запрос"""
+        """Парсит PostgreSQL SQL запрос"""
         try:
             parsed = sqlparse.parse(query)
             if parsed:
@@ -198,6 +234,15 @@ class AdvancedSQLValidator:
     def _check_basic_security(self, analysis: SQLAnalysis, parsed):
         """Проверяет базовую безопасность SQL"""
         query_upper = analysis.query.upper()
+        
+        # Проверяем, что запрос начинается с разрешенной команды
+        allowed_commands = self.dangerous_keywords['allowed']
+        query_starts_with_allowed = any(query_upper.strip().startswith(cmd) for cmd in allowed_commands)
+        
+        if not query_starts_with_allowed:
+            analysis.errors.append(f"Разрешены только команды: {', '.join(allowed_commands)}")
+            analysis.risk_level = RiskLevel.CRITICAL
+            return
         
         # Проверка на критичные команды
         for keyword in self.dangerous_keywords['critical']:
@@ -234,10 +279,48 @@ class AdvancedSQLValidator:
                 if analysis.risk_level == RiskLevel.LOW:
                     analysis.risk_level = RiskLevel.MEDIUM
         
-        # Проверка, что запрос начинается с SELECT
-        if not query_upper.strip().startswith('SELECT'):
-            analysis.errors.append("Разрешены только SELECT запросы")
-            analysis.risk_level = RiskLevel.CRITICAL
+        # Дополнительные проверки для модифицирующих операций
+        self._check_modifying_operations(analysis, query_upper)
+    
+    def _check_modifying_operations(self, analysis: SQLAnalysis, query_upper: str):
+        """Проверяет модифицирующие операции (INSERT, UPDATE, DELETE)"""
+        
+        # Проверка для DELETE операций
+        if query_upper.strip().startswith('DELETE'):
+            analysis.warnings.append("Выполняется DELETE операция - будьте осторожны")
+            analysis.risk_level = max(analysis.risk_level, RiskLevel.HIGH)
+            
+            # Проверяем наличие WHERE клаузулы для безопасности
+            if 'WHERE' not in query_upper:
+                analysis.errors.append("DELETE без WHERE клаузулы запрещен")
+                analysis.risk_level = RiskLevel.CRITICAL
+                analysis.validation_result = ValidationResult.BLOCKED
+            
+            # Проверяем на массовое удаление
+            if 'TRUNCATE' in query_upper or 'DROP' in query_upper:
+                analysis.errors.append("Обнаружены опасные операции удаления")
+                analysis.risk_level = RiskLevel.CRITICAL
+                analysis.validation_result = ValidationResult.BLOCKED
+        
+        # Проверка для UPDATE операций
+        elif query_upper.strip().startswith('UPDATE'):
+            analysis.warnings.append("Выполняется UPDATE операция - будьте осторожны")
+            analysis.risk_level = max(analysis.risk_level, RiskLevel.HIGH)
+            
+            # Проверяем наличие WHERE клаузулы для безопасности
+            if 'WHERE' not in query_upper:
+                analysis.errors.append("UPDATE без WHERE клаузулы запрещен")
+                analysis.risk_level = RiskLevel.CRITICAL
+                analysis.validation_result = ValidationResult.BLOCKED
+        
+        # Проверка для INSERT операций
+        elif query_upper.strip().startswith('INSERT'):
+            analysis.warnings.append("Выполняется INSERT операция")
+            analysis.risk_level = max(analysis.risk_level, RiskLevel.MEDIUM)
+            
+            # Проверяем на массовую вставку
+            if 'SELECT' in query_upper and 'INSERT' in query_upper:
+                analysis.warnings.append("Выполняется INSERT с подзапросом - проверьте данные")
     
     def _check_sql_injection(self, analysis: SQLAnalysis):
         """Проверяет на SQL инъекции"""
@@ -346,6 +429,25 @@ class AdvancedSQLValidator:
                 'description': 'Использование функций в WHERE может замедлить запрос'
             })
     
+    def _check_order_by_syntax(self, analysis: SQLAnalysis):
+        """Проверяет синтаксис ORDER BY клаузулы"""
+        query_upper = analysis.query.upper()
+        
+        if 'ORDER BY' in query_upper:
+            # Ищем ORDER BY клаузулу
+            order_by_match = re.search(r'ORDER\s+BY\s+([^LIMIT]+?)(?=\s+LIMIT|\s*$)', analysis.query, re.IGNORECASE | re.DOTALL)
+            
+            if order_by_match:
+                order_by_part = order_by_match.group(1).strip()
+                
+                # Проверяем на неполные ссылки типа "T1." без указания колонки
+                incomplete_refs = re.findall(r'\b\w+\.\s*(?=\s*[,LIMIT]|\s*$)', order_by_part)
+                
+                if incomplete_refs:
+                    analysis.errors.append(f"Неполные ссылки в ORDER BY: {', '.join(incomplete_refs)}")
+                    analysis.risk_level = RiskLevel.HIGH
+                    analysis.validation_result = ValidationResult.BLOCKED
+    
     def _analyze_functions(self, analysis: SQLAnalysis, parsed):
         """Анализирует используемые SQL функции"""
         # Поиск функций в запросе
@@ -379,12 +481,19 @@ class AdvancedSQLValidator:
     
     def _determine_final_result(self, analysis: SQLAnalysis):
         """Определяет финальный результат валидации"""
+        # Теперь не блокируем запросы, только предупреждаем
         if analysis.errors:
-            analysis.is_valid = False
-            analysis.validation_result = ValidationResult.BLOCKED
+            # Критические ошибки все еще блокируем
+            critical_errors = [e for e in analysis.errors if any(keyword in e.upper() for keyword in ['DROP', 'DELETE', 'TRUNCATE', 'ALTER', 'CREATE'])]
+            if critical_errors:
+                analysis.is_valid = False
+                analysis.validation_result = ValidationResult.BLOCKED
+            else:
+                analysis.is_valid = True
+                analysis.validation_result = ValidationResult.WARNING
         elif analysis.risk_level in [RiskLevel.HIGH, RiskLevel.CRITICAL]:
-            analysis.is_valid = False
-            analysis.validation_result = ValidationResult.BLOCKED
+            analysis.is_valid = True
+            analysis.validation_result = ValidationResult.WARNING
         elif analysis.warnings:
             analysis.validation_result = ValidationResult.WARNING
         else:
@@ -442,6 +551,26 @@ class AdvancedSQLValidator:
             return f"Запрос выполнен с предупреждениями: {'; '.join(analysis.warnings[:3])}"
         else:
             return "Запрос прошел все проверки безопасности"
+    
+    def get_risk_color(self, risk_level: RiskLevel) -> str:
+        """Возвращает цвет для отображения уровня риска"""
+        colors = {
+            RiskLevel.LOW: "#28a745",      # Зеленый
+            RiskLevel.MEDIUM: "#ffc107",   # Желтый
+            RiskLevel.HIGH: "#fd7e14",     # Оранжевый
+            RiskLevel.CRITICAL: "#dc3545"  # Красный
+        }
+        return colors.get(risk_level, "#6c757d")
+    
+    def get_risk_icon(self, risk_level: RiskLevel) -> str:
+        """Возвращает иконку для уровня риска"""
+        icons = {
+            RiskLevel.LOW: "✅",
+            RiskLevel.MEDIUM: "⚠️",
+            RiskLevel.HIGH: "🔶",
+            RiskLevel.CRITICAL: "🚨"
+        }
+        return icons.get(risk_level, "❓")
 
 
 # Глобальный экземпляр валидатора
@@ -451,10 +580,10 @@ def validate_sql_query(
     query: str,
     context: Optional[Dict[str, Any]] = None
 ) -> SQLAnalysis:
-    """Валидирует SQL запрос с расширенными проверками"""
+    """Валидирует PostgreSQL SQL запрос с расширенными проверками"""
     return sql_validator.validate_sql(query, context)
 
 def is_sql_safe(query: str) -> Tuple[bool, List[str]]:
-    """Быстрая проверка безопасности SQL запроса"""
+    """Быстрая проверка безопасности PostgreSQL SQL запроса"""
     analysis = validate_sql_query(query)
     return analysis.validation_result != ValidationResult.BLOCKED, analysis.errors
