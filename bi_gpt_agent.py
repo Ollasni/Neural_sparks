@@ -9,10 +9,18 @@ import hashlib
 import time
 import logging
 import argparse
+import uuid
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import json
+
+# Загружаем переменные окружения из .env файла
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # python-dotenv не установлен
 
 import openai
 from langchain.llms import OpenAI
@@ -26,10 +34,29 @@ import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 
-
-# Конфигурация логирования
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Импорт новых систем (с обработкой ошибок импорта)
+try:
+    from config import get_settings, validate_config, ConfigurationError
+    from exceptions import (
+        BIGPTException, ValidationError, SecurityError, SQLValidationError,
+        ModelError, DatabaseError, PerformanceError, NetworkError,
+        create_error_context, handle_exception
+    )
+    from logging_config import get_logger, setup_logging, log_exception, log_performance, log_user_action
+    from advanced_sql_validator import validate_sql_query, ValidationResult
+    
+    # Настройка логирования
+    setup_logging()
+    logger = get_logger(__name__)
+    
+    ENHANCED_FEATURES_AVAILABLE = True
+except ImportError as e:
+    # Fallback на стандартное логирование если новые модули недоступны
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+    logger.warning(f"Enhanced features not available: {e}")
+    
+    ENHANCED_FEATURES_AVAILABLE = False
 
 
 @dataclass
@@ -41,6 +68,21 @@ class QueryMetrics:
     pii_detected: bool
     business_terms_used: int
     aggregation_accuracy: float
+    
+    # Новые поля для улучшенной аналитики
+    request_id: str = ""
+    validation_result: str = "unknown"
+    risk_level: str = "unknown"
+    complexity_score: int = 0
+    user_id: Optional[str] = None
+    session_id: Optional[str] = None
+    timestamp: Optional[datetime] = None
+    
+    def __post_init__(self):
+        if self.timestamp is None:
+            self.timestamp = datetime.now()
+        if not self.request_id:
+            self.request_id = str(uuid.uuid4())[:8]
     
     
 class BusinessDictionary:
@@ -294,7 +336,32 @@ class BIGPTAgent:
     """Основной класс BI-GPT агента"""
     
     def __init__(self, db_path: str = "bi_demo.db", api_key: str = None, base_url: str = None):
-        self.db_path = db_path
+        # Улучшенная инициализация с новыми системами
+        if ENHANCED_FEATURES_AVAILABLE:
+            try:
+                self.settings = get_settings()
+                self.logger = get_logger('bi_gpt_agent')
+                
+                # Используем путь из настроек если не передан
+                self.db_path = db_path if db_path != "bi_demo.db" else self.settings.database_url.replace('sqlite:///', '')
+                
+                # Валидация конфигурации
+                config_errors = validate_config()
+                if config_errors and self.settings.is_production:
+                    raise ConfigurationError(f"Configuration validation failed: {'; '.join(config_errors)}")
+                    
+                self.logger.info("BI-GPT Agent initializing with enhanced features")
+                
+            except Exception as e:
+                # Fallback если новые системы не работают
+                logger.warning(f"Enhanced initialization failed, using legacy mode: {e}")
+                self.db_path = db_path
+                self.settings = None
+                self.logger = logger
+        else:
+            self.db_path = db_path
+            self.settings = None
+            self.logger = logger
         
         # Инициализация генератора SQL с поддержкой локальных моделей
         if base_url:
@@ -307,6 +374,12 @@ class BIGPTAgent:
         
         # Инициализация базы данных
         self._init_demo_database()
+        
+        if hasattr(self, 'logger'):
+            self.logger.info(f"BI-GPT Agent initialized successfully", extra={
+                'database_path': self.db_path,
+                'enhanced_features': ENHANCED_FEATURES_AVAILABLE
+            })
         
     def _init_demo_database(self):
         """Создает демо базу данных с тестовыми данными"""
@@ -393,15 +466,52 @@ class BIGPTAgent:
         conn.commit()
         conn.close()
         
-    def process_query(self, user_query: str) -> Dict[str, Any]:
+    def process_query(self, user_query: str, user_id: str = None, session_id: str = None) -> Dict[str, Any]:
         """Обрабатывает пользовательский запрос"""
         start_time = time.time()
+        request_id = str(uuid.uuid4())[:8]
+        
+        # Логирование действия пользователя
+        if ENHANCED_FEATURES_AVAILABLE and hasattr(self, 'logger'):
+            try:
+                log_user_action(
+                    'query_submitted',
+                    user_id=user_id,
+                    session_id=session_id,
+                    details={'query_length': len(user_query), 'request_id': request_id}
+                )
+                
+                self.logger.info(f"Processing user query", extra={
+                    'request_id': request_id,
+                    'user_id': user_id,
+                    'session_id': session_id,
+                    'query_length': len(user_query)
+                })
+            except Exception as e:
+                logger.warning(f"Enhanced logging failed: {e}")
         
         # Проверка на PII
         pii_detected = self.security.detect_pii(user_query)
         if pii_detected:
+            if ENHANCED_FEATURES_AVAILABLE:
+                try:
+                    error = SecurityError(
+                        "Personal data detected in query",
+                        threat_type="pii_exposure",
+                        context=create_error_context(
+                            user_id=user_id,
+                            session_id=session_id,
+                            query=user_query,
+                            request_id=request_id
+                        )
+                    )
+                    log_exception(error)
+                except Exception as e:
+                    logger.warning(f"Enhanced error handling failed: {e}")
+            
             return {
                 'error': 'Обнаружены персональные данные в запросе',
+                'request_id': request_id,
                 'sql': '',
                 'results': None,
                 'metrics': None
@@ -533,11 +643,9 @@ def main():
     # Парсинг аргументов командной строки
     parser = argparse.ArgumentParser(description='BI-GPT Agent - Natural Language to SQL')
     parser.add_argument('--api_key', type=str, 
-                       default="",
-                       help='API key for the model')
+                       help='API key for the model (or set LOCAL_API_KEY/OPENAI_API_KEY env var)')
     parser.add_argument('--base_url', type=str,
-                       default="https://bkwg3037dnb7aq-8000.proxy.runpod.net/v1",
-                       help='Base URL for the model API')
+                       help='Base URL for the model API (or set LOCAL_BASE_URL env var)')
     parser.add_argument('--query', type=str,
                        help='Single query to execute')
     

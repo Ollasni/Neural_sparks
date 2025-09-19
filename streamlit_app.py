@@ -10,6 +10,11 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import json
 import time
+import os
+
+# Загружаем переменные окружения из .env файла
+from dotenv import load_dotenv
+load_dotenv()
 
 from bi_gpt_agent import BIGPTAgent
 
@@ -162,14 +167,20 @@ def main():
         )
         
         if model_type == "Local Llama-4-Scout":
+            # Попытка получить из переменных окружения
+            default_url = os.getenv("LOCAL_BASE_URL", "")
+            default_key = os.getenv("LOCAL_API_KEY", "")
+            
             base_url = st.text_input(
                 "Model URL",
-                value="https://bkwg3037dnb7aq-8000.proxy.runpod.net/v1"
+                value=default_url,
+                help="Leave empty to use LOCAL_BASE_URL environment variable"
             )
             api_key = st.text_input(
                 "API Key",
-                value="app-yzNqYV4e205Vui63kMQh1ckU",
-                type="password"
+                value=default_key,
+                type="password",
+                help="Leave empty to use LOCAL_API_KEY environment variable"
             )
             st.session_state['base_url'] = base_url
             st.session_state['api_key'] = api_key
@@ -216,9 +227,22 @@ def main():
         """)
     
     # Инициализация агента с настройками
-    api_key = st.session_state.get('api_key', 'app-yzNqYV4e205Vui63kMQh1ckU')
-    base_url = st.session_state.get('base_url', 'https://bkwg3037dnb7aq-8000.proxy.runpod.net/v1')
-    agent = init_agent(api_key, base_url)
+    # Получаем настройки из UI или переменных окружения
+    api_key = st.session_state.get('api_key') or os.getenv('LOCAL_API_KEY')
+    base_url = st.session_state.get('base_url') or os.getenv('LOCAL_BASE_URL')
+    
+    if not api_key or not base_url:
+        st.error("⚠️ API настройки не найдены! Пожалуйста:")
+        st.write("1. Заполните поля в боковой панели, ИЛИ")
+        st.write("2. Установите переменные окружения LOCAL_API_KEY и LOCAL_BASE_URL, ИЛИ")
+        st.write("3. Создайте .env файл из env.example")
+        st.stop()
+    
+    try:
+        agent = init_agent(api_key, base_url)
+    except Exception as e:
+        st.error(f"❌ Ошибка инициализации агента: {e}")
+        st.stop()
     
     # Основная область
     col1, col2 = st.columns([2, 1])
