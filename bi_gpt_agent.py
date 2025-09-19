@@ -615,7 +615,6 @@ class BIGPTAgent:
         # Обновляем URL для SQLite
         self.db_url = f"sqlite:///{self.db_path}"
         print("✅ SQLite fallback база данных инициализирована")
-        
     def process_query(self, user_query: str, user_id: str = None, session_id: str = None) -> Dict[str, Any]:
         """Обрабатывает пользовательский запрос"""
         start_time = time.time()
