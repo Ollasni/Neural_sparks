@@ -10,6 +10,11 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import json
 import time
+import os
+
+# Загружаем переменные окружения из .env файла
+from dotenv import load_dotenv
+load_dotenv()
 
 from bi_gpt_agent import BIGPTAgent
 
@@ -59,7 +64,14 @@ st.markdown("""
 @st.cache_resource
 def init_agent(api_key=None, base_url=None):
     """Инициализация BI-GPT агента"""
-    return BIGPTAgent(api_key=api_key, base_url=base_url)
+    # Проверяем, нужно ли использовать fine-tuned модель
+    use_finetuned = os.getenv("USE_FINETUNED_MODEL", "false").lower() == "true"
+    
+    if use_finetuned:
+        st.success("🎯 Используется fine-tuned модель Phi-3 + LoRA")
+        return BIGPTAgent(use_finetuned=True)
+    else:
+        return BIGPTAgent(api_key=api_key, base_url=base_url)
 
 def display_metrics_dashboard(agent):
     """Отображает дашборд с метриками"""
@@ -157,31 +169,32 @@ def main():
         # Выбор модели
         model_type = st.selectbox(
             "Select Model:",
-            ["Local Llama-4-Scout", "OpenAI GPT-4"],
+            ["Llama 4 API (RunPod)", "Local Fine-tuned (Phi-3)"],
             index=0
         )
         
-        if model_type == "Local Llama-4-Scout":
-            base_url = st.text_input(
-                "Model URL",
-                value="https://bkwg3037dnb7aq-8000.proxy.runpod.net/v1"
-            )
-            api_key = st.text_input(
-                "API Key",
-                value="app-yzNqYV4e205Vui63kMQh1ckU",
-                type="password"
-            )
-            st.session_state['base_url'] = base_url
-            st.session_state['api_key'] = api_key
-            st.success("Using Llama-4-Scout model")
+        # Настройки загружаются из .env файла
+        env_url = os.getenv("LOCAL_BASE_URL")
+        env_key = os.getenv("LOCAL_API_KEY")
+        
+        if not env_url or not env_key:
+            st.error("⚠️ Настройки не найдены в .env файле!")
+            st.write("Создайте .env файл с настройками:")
+            st.code("""LOCAL_API_KEY=your_api_key
+LOCAL_BASE_URL=your_api_url""")
+            st.stop()
+        
+        # Показываем текущие настройки из .env
+        if model_type == "Llama 4 API (RunPod)":
+            st.info(f"🦙 Llama 4 API: {env_url}")
+            st.success("Настройки загружены из .env файла")
         else:
-            api_key = st.text_input(
-                "OpenAI API Key", 
-                type="password"
-            )
-            st.session_state['api_key'] = api_key
-            st.session_state['base_url'] = None
-            st.info("Using OpenAI GPT-4")
+            st.info(f"🤖 Fine-tuned Model: {env_url}")
+            st.success("Настройки загружены из .env файла")
+        
+        # Сохраняем настройки из .env
+        st.session_state['base_url'] = env_url
+        st.session_state['api_key'] = env_key
         
         st.markdown("---")
         
@@ -216,9 +229,22 @@ def main():
         """)
     
     # Инициализация агента с настройками
-    api_key = st.session_state.get('api_key', 'app-yzNqYV4e205Vui63kMQh1ckU')
-    base_url = st.session_state.get('base_url', 'https://bkwg3037dnb7aq-8000.proxy.runpod.net/v1')
-    agent = init_agent(api_key, base_url)
+    # Получаем настройки из UI или переменных окружения
+    api_key = st.session_state.get('api_key') or os.getenv('LOCAL_API_KEY')
+    base_url = st.session_state.get('base_url') or os.getenv('LOCAL_BASE_URL')
+    
+    if not api_key or not base_url:
+        st.error("⚠️ API настройки не найдены! Пожалуйста:")
+        st.write("1. Заполните поля в боковой панели, ИЛИ")
+        st.write("2. Установите переменные окружения LOCAL_API_KEY и LOCAL_BASE_URL, ИЛИ")
+        st.write("3. Создайте .env файл из env.example")
+        st.stop()
+    
+    try:
+        agent = init_agent(api_key, base_url)
+    except Exception as e:
+        st.error(f"❌ Ошибка инициализации агента: {e}")
+        st.stop()
     
     # Основная область
     col1, col2 = st.columns([2, 1])

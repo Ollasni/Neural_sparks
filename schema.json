@@ -1,0 +1,394 @@
+{
+  "db": "sqlite",
+  "schemas": [
+    "public"
+  ],
+  "tables": {
+    "public.customers": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "pk": true,
+          "nullable": true,
+          "default": null,
+          "tags": [
+            "key",
+            "number",
+            "id",
+            "measure"
+          ],
+          "description": null
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "pk": false,
+          "nullable": false,
+          "default": null,
+          "tags": [
+            "text"
+          ],
+          "description": null
+        },
+        {
+          "name": "email",
+          "type": "TEXT",
+          "pk": false,
+          "nullable": true,
+          "default": null,
+          "tags": [
+            "contact",
+            "text"
+          ],
+          "description": null
+        },
+        {
+          "name": "registration_date",
+          "type": "DATE",
+          "pk": false,
+          "nullable": true,
+          "default": null,
+          "tags": [
+            "time",
+            "date"
+          ],
+          "description": null
+        },
+        {
+          "name": "segment",
+          "type": "TEXT",
+          "pk": false,
+          "nullable": true,
+          "default": null,
+          "tags": [
+            "text",
+            "category"
+          ],
+          "description": null
+        }
+      ],
+      "description": null,
+      "row_count": 3,
+      "schema": "public"
+    },
+    "public.products": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "pk": true,
+          "nullable": true,
+          "default": null,
+          "tags": [
+            "key",
+            "number",
+            "id",
+            "measure"
+          ],
+          "description": null
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "pk": false,
+          "nullable": false,
+          "default": null,
+          "tags": [
+            "text"
+          ],
+          "description": null
+        },
+        {
+          "name": "category",
+          "type": "TEXT",
+          "pk": false,
+          "nullable": true,
+          "default": null,
+          "tags": [
+            "text",
+            "category"
+          ],
+          "description": null
+        },
+        {
+          "name": "price",
+          "type": "DECIMAL(10,2)",
+          "pk": false,
+          "nullable": true,
+          "default": null,
+          "tags": [
+            "money",
+            "measure"
+          ],
+          "description": null
+        },
+        {
+          "name": "cost",
+          "type": "DECIMAL(10,2)",
+          "pk": false,
+          "nullable": true,
+          "default": null,
+          "tags": [
+            "money",
+            "measure"
+          ],
+          "description": null
+        }
+      ],
+      "description": null,
+      "row_count": 3,
+      "schema": "public"
+    },
+    "public.orders": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "pk": true,
+          "nullable": true,
+          "default": null,
+          "tags": [
+            "key",
+            "number",
+            "id",
+            "measure"
+          ],
+          "description": null
+        },
+        {
+          "name": "customer_id",
+          "type": "INTEGER",
+          "pk": false,
+          "nullable": true,
+          "default": null,
+          "tags": [
+            "key",
+            "number",
+            "id",
+            "measure"
+          ],
+          "description": null
+        },
+        {
+          "name": "order_date",
+          "type": "DATE",
+          "pk": false,
+          "nullable": true,
+          "default": null,
+          "tags": [
+            "time",
+            "date"
+          ],
+          "description": null
+        },
+        {
+          "name": "amount",
+          "type": "DECIMAL(10,2)",
+          "pk": false,
+          "nullable": true,
+          "default": null,
+          "tags": [
+            "money",
+            "measure"
+          ],
+          "description": null
+        },
+        {
+          "name": "status",
+          "type": "TEXT",
+          "pk": false,
+          "nullable": true,
+          "default": null,
+          "tags": [
+            "category",
+            "text",
+            "status"
+          ],
+          "description": null
+        }
+      ],
+      "description": null,
+      "row_count": 3,
+      "schema": "public"
+    },
+    "public.sales": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "pk": true,
+          "nullable": true,
+          "default": null,
+          "tags": [
+            "key",
+            "number",
+            "id",
+            "measure"
+          ],
+          "description": null
+        },
+        {
+          "name": "order_id",
+          "type": "INTEGER",
+          "pk": false,
+          "nullable": true,
+          "default": null,
+          "tags": [
+            "key",
+            "number",
+            "id",
+            "measure"
+          ],
+          "description": null
+        },
+        {
+          "name": "product_id",
+          "type": "INTEGER",
+          "pk": false,
+          "nullable": true,
+          "default": null,
+          "tags": [
+            "key",
+            "number",
+            "id",
+            "measure"
+          ],
+          "description": null
+        },
+        {
+          "name": "quantity",
+          "type": "INTEGER",
+          "pk": false,
+          "nullable": true,
+          "default": null,
+          "tags": [
+            "number",
+            "measure"
+          ],
+          "description": null
+        },
+        {
+          "name": "revenue",
+          "type": "DECIMAL(10,2)",
+          "pk": false,
+          "nullable": true,
+          "default": null,
+          "tags": [
+            "money",
+            "measure"
+          ],
+          "description": null
+        },
+        {
+          "name": "costs",
+          "type": "DECIMAL(10,2)",
+          "pk": false,
+          "nullable": true,
+          "default": null,
+          "tags": [
+            "money",
+            "measure"
+          ],
+          "description": null
+        }
+      ],
+      "description": null,
+      "row_count": 5,
+      "schema": "public"
+    },
+    "public.inventory": {
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "pk": true,
+          "nullable": true,
+          "default": null,
+          "tags": [
+            "key",
+            "number",
+            "id",
+            "measure"
+          ],
+          "description": null
+        },
+        {
+          "name": "product_id",
+          "type": "INTEGER",
+          "pk": false,
+          "nullable": true,
+          "default": null,
+          "tags": [
+            "key",
+            "number",
+            "id",
+            "measure"
+          ],
+          "description": null
+        },
+        {
+          "name": "current_stock",
+          "type": "INTEGER",
+          "pk": false,
+          "nullable": true,
+          "default": null,
+          "tags": [
+            "number",
+            "measure"
+          ],
+          "description": null
+        },
+        {
+          "name": "warehouse",
+          "type": "TEXT",
+          "pk": false,
+          "nullable": true,
+          "default": null,
+          "tags": [
+            "text"
+          ],
+          "description": null
+        }
+      ],
+      "description": null,
+      "row_count": 3,
+      "schema": "public"
+    }
+  },
+  "fks": [
+    {
+      "from": "public.orders.customer_id",
+      "to": "public.customers.id",
+      "constraint": "fk_orders_customer_id"
+    },
+    {
+      "from": "public.sales.product_id",
+      "to": "public.products.id",
+      "constraint": "fk_sales_product_id"
+    },
+    {
+      "from": "public.sales.order_id",
+      "to": "public.orders.id",
+      "constraint": "fk_sales_order_id"
+    },
+    {
+      "from": "public.inventory.product_id",
+      "to": "public.products.id",
+      "constraint": "fk_inventory_product_id"
+    }
+  ],
+  "pii_columns": [
+    "public.customers.name",
+    "public.customers.email",
+    "public.products.name"
+  ],
+  "metadata": {
+    "dump_timestamp": "2025-09-19T14:27:08.602320",
+    "db_path": "bi_demo.db",
+    "total_tables": 5,
+    "total_columns": 25,
+    "total_foreign_keys": 4,
+    "pii_columns_count": 3
+  }
+}

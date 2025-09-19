@@ -5,14 +5,24 @@ BI-GPT Agent: Natural Language to SQL converter for corporate BI
 import os
 import re
 import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import hashlib
 import time
 import logging
 import argparse
+import uuid
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import json
+
+# Загружаем переменные окружения из .env файла
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # python-dotenv не установлен
 
 import openai
 from langchain.llms import OpenAI
@@ -26,10 +36,29 @@ import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 
-
-# Конфигурация логирования
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Импорт новых систем (с обработкой ошибок импорта)
+try:
+    from config import get_settings, validate_config, ConfigurationError
+    from exceptions import (
+        BIGPTException, ValidationError, SecurityError, SQLValidationError,
+        ModelError, DatabaseError, PerformanceError, NetworkError,
+        create_error_context, handle_exception
+    )
+    from logging_config import get_logger, setup_logging, log_exception, log_performance, log_user_action
+    from advanced_sql_validator import validate_sql_query, ValidationResult
+    
+    # Настройка логирования
+    setup_logging()
+    logger = get_logger(__name__)
+    
+    ENHANCED_FEATURES_AVAILABLE = True
+except ImportError as e:
+    # Fallback на стандартное логирование если новые модули недоступны
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+    logger.warning(f"Enhanced features not available: {e}")
+    
+    ENHANCED_FEATURES_AVAILABLE = False
 
 
 @dataclass
@@ -41,6 +70,21 @@ class QueryMetrics:
     pii_detected: bool
     business_terms_used: int
     aggregation_accuracy: float
+    
+    # Новые поля для улучшенной аналитики
+    request_id: str = ""
+    validation_result: str = "unknown"
+    risk_level: str = "unknown"
+    complexity_score: int = 0
+    user_id: Optional[str] = None
+    session_id: Optional[str] = None
+    timestamp: Optional[datetime] = None
+    
+    def __post_init__(self):
+        if self.timestamp is None:
+            self.timestamp = datetime.now()
+        if not self.request_id:
+            self.request_id = str(uuid.uuid4())[:8]
     
     
 class BusinessDictionary:
@@ -293,14 +337,58 @@ SQL:"""
 class BIGPTAgent:
     """Основной класс BI-GPT агента"""
     
-    def __init__(self, db_path: str = "bi_demo.db", api_key: str = None, base_url: str = None):
-        self.db_path = db_path
-        
-        # Инициализация генератора SQL с поддержкой локальных моделей
-        if base_url:
-            self.sql_generator = SQLGenerator(api_key, base_url)
+    def __init__(self, db_path: str = "bi_demo.db", api_key: str = None, base_url: str = None, use_finetuned: bool = False):
+        # Улучшенная инициализация с новыми системами
+        if ENHANCED_FEATURES_AVAILABLE:
+            try:
+                self.settings = get_settings()
+                self.logger = get_logger('bi_gpt_agent')
+                
+                # Используем URL базы данных из настроек
+                self.db_url = self.settings.database_url if self.settings else f"postgresql://olgasnissarenko@localhost:5432/bi_demo"
+                self.db_path = db_path  # Оставляем для совместимости
+                
+                # Валидация конфигурации
+                config_errors = validate_config()
+                if config_errors and self.settings.is_production:
+                    raise ConfigurationError(f"Configuration validation failed: {'; '.join(config_errors)}")
+                    
+                self.logger.info("BI-GPT Agent initializing with enhanced features")
+                
+            except Exception as e:
+                # Fallback если новые системы не работают
+                logger.warning(f"Enhanced initialization failed, using legacy mode: {e}")
+                self.db_path = db_path
+                self.settings = None
+                self.logger = logger
         else:
-            self.sql_generator = SQLGenerator(api_key or os.getenv("OPENAI_API_KEY"))
+            self.db_path = db_path
+            self.db_url = f"postgresql://olgasnissarenko@localhost:5432/bi_demo"
+            self.settings = None
+            self.logger = logger
+        
+        # Инициализация генератора SQL - с поддержкой fine-tuned модели
+        self.use_finetuned = use_finetuned
+        if use_finetuned:
+            # Используем fine-tuned модель напрямую
+            try:
+                from finetuned_sql_generator import FineTunedSQLGenerator
+                self.sql_generator = FineTunedSQLGenerator()
+                print("✅ Используется fine-tuned модель Phi-3 + LoRA")
+            except Exception as e:
+                print(f"❌ Ошибка загрузки fine-tuned модели: {e}")
+                print("⚠️  Переключаемся на API модель...")
+                if base_url:
+                    self.sql_generator = SQLGenerator(api_key, base_url)
+                else:
+                    self.sql_generator = SQLGenerator(api_key or os.getenv("OPENAI_API_KEY"))
+                self.use_finetuned = False
+        else:
+            # Используем API модель (OpenAI или локальную через API)
+            if base_url:
+                self.sql_generator = SQLGenerator(api_key, base_url)
+            else:
+                self.sql_generator = SQLGenerator(api_key or os.getenv("OPENAI_API_KEY"))
             
         self.security = SecurityValidator()
         self.metrics_history = []
@@ -308,12 +396,143 @@ class BIGPTAgent:
         # Инициализация базы данных
         self._init_demo_database()
         
+        if hasattr(self, 'logger'):
+            self.logger.info(f"BI-GPT Agent initialized successfully", extra={
+                'database_path': self.db_path,
+                'enhanced_features': ENHANCED_FEATURES_AVAILABLE,
+                'use_finetuned': self.use_finetuned
+            })
+        
     def _init_demo_database(self):
-        """Создает демо базу данных с тестовыми данными"""
+        """Создает демо базу данных PostgreSQL с тестовыми данными"""
+        try:
+            # Подключаемся к PostgreSQL
+            conn = psycopg2.connect(self.db_url)
+            cursor = conn.cursor()
+            
+            # Создание таблиц (PostgreSQL синтаксис)
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS customers (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                email VARCHAR(255) UNIQUE,
+                registration_date DATE,
+                segment VARCHAR(50)
+            );
+            """)
+            
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS products (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                category VARCHAR(100),
+                price DECIMAL(10,2),
+                cost DECIMAL(10,2)
+            );
+            """)
+            
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS orders (
+                id SERIAL PRIMARY KEY,
+                customer_id INTEGER REFERENCES customers(id),
+                order_date DATE,
+                amount DECIMAL(10,2),
+                status VARCHAR(50)
+            );
+            """)
+            
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS sales (
+                id SERIAL PRIMARY KEY,
+                order_id INTEGER REFERENCES orders(id),
+                product_id INTEGER REFERENCES products(id),
+                quantity INTEGER,
+                revenue DECIMAL(10,2),
+                costs DECIMAL(10,2)
+            );
+            """)
+            
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS inventory (
+                id SERIAL PRIMARY KEY,
+                product_id INTEGER REFERENCES products(id),
+                current_stock INTEGER,
+                warehouse VARCHAR(100)
+            );
+            """)
+            
+            # Вставка тестовых данных (PostgreSQL синтаксис)
+            cursor.execute("""
+            INSERT INTO customers (id, name, email, registration_date, segment) VALUES 
+            (1, 'Иван Иванов', 'ivan@email.com', '2023-01-15', 'Premium'),
+            (2, 'Мария Петрова', 'maria@email.com', '2023-02-20', 'Standard'),
+            (3, 'Алексей Сидоров', 'alex@email.com', '2023-03-10', 'Premium')
+            ON CONFLICT (id) DO NOTHING;
+            """)
+            
+            cursor.execute("""
+            INSERT INTO products (id, name, category, price, cost) VALUES
+            (1, 'Ноутбук ASUS', 'Электроника', 50000, 35000),
+            (2, 'Мышь Logitech', 'Электроника', 2000, 1200),
+            (3, 'Клавиатура', 'Электроника', 3000, 2000)
+            ON CONFLICT (id) DO NOTHING;
+            """)
+            
+            cursor.execute("""
+            INSERT INTO orders (id, customer_id, order_date, amount, status) VALUES
+            (1, 1, '2024-09-15', 52000, 'completed'),
+            (2, 2, '2024-09-14', 5000, 'completed'),
+            (3, 3, '2024-09-13', 50000, 'pending')
+            ON CONFLICT (id) DO NOTHING;
+            """)
+            
+            cursor.execute("""
+            INSERT INTO sales (id, order_id, product_id, quantity, revenue, costs) VALUES
+            (1, 1, 1, 1, 50000, 35000),
+            (2, 1, 2, 1, 2000, 1200),
+            (3, 2, 2, 1, 2000, 1200),
+            (4, 2, 3, 1, 3000, 2000),
+            (5, 3, 1, 1, 50000, 35000)
+            ON CONFLICT (id) DO NOTHING;
+            """)
+            
+            cursor.execute("""
+            INSERT INTO inventory (id, product_id, current_stock, warehouse) VALUES
+            (1, 1, 10, 'Москва'),
+            (2, 2, 50, 'Москва'),
+            (3, 3, 30, 'СПб')
+            ON CONFLICT (id) DO NOTHING;
+            """)
+            
+            # Обновляем последовательности SERIAL после вставки
+            cursor.execute("SELECT setval('customers_id_seq', (SELECT MAX(id) FROM customers));")
+            cursor.execute("SELECT setval('products_id_seq', (SELECT MAX(id) FROM products));")
+            cursor.execute("SELECT setval('orders_id_seq', (SELECT MAX(id) FROM orders));")
+            cursor.execute("SELECT setval('sales_id_seq', (SELECT MAX(id) FROM sales));")
+            cursor.execute("SELECT setval('inventory_id_seq', (SELECT MAX(id) FROM inventory));")
+            
+            conn.commit()
+            cursor.close()
+            conn.close()
+            
+            print("✅ PostgreSQL демо база данных инициализирована")
+            
+        except psycopg2.Error as e:
+            print(f"⚠️  Ошибка подключения к PostgreSQL: {e}")
+            print("🔄 Fallback: используем SQLite")
+            # Fallback на SQLite если PostgreSQL недоступен
+            self._init_sqlite_fallback()
+        except Exception as e:
+            print(f"⚠️  Общая ошибка базы данных: {e}")
+            print("🔄 Fallback: используем SQLite")
+            self._init_sqlite_fallback()
+    
+    def _init_sqlite_fallback(self):
+        """Fallback инициализация SQLite если PostgreSQL недоступен"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
-        # Создание таблиц
+        # Создание таблиц (SQLite синтаксис)
         cursor.executescript("""
         CREATE TABLE IF NOT EXISTS customers (
             id INTEGER PRIMARY KEY,
@@ -393,15 +612,56 @@ class BIGPTAgent:
         conn.commit()
         conn.close()
         
-    def process_query(self, user_query: str) -> Dict[str, Any]:
+        # Обновляем URL для SQLite
+        self.db_url = f"sqlite:///{self.db_path}"
+        print("✅ SQLite fallback база данных инициализирована")
+        
+    def process_query(self, user_query: str, user_id: str = None, session_id: str = None) -> Dict[str, Any]:
         """Обрабатывает пользовательский запрос"""
         start_time = time.time()
+        request_id = str(uuid.uuid4())[:8]
+        
+        # Логирование действия пользователя
+        if ENHANCED_FEATURES_AVAILABLE and hasattr(self, 'logger'):
+            try:
+                log_user_action(
+                    'query_submitted',
+                    user_id=user_id,
+                    session_id=session_id,
+                    details={'query_length': len(user_query), 'request_id': request_id}
+                )
+                
+                self.logger.info(f"Processing user query", extra={
+                    'request_id': request_id,
+                    'user_id': user_id,
+                    'session_id': session_id,
+                    'query_length': len(user_query)
+                })
+            except Exception as e:
+                logger.warning(f"Enhanced logging failed: {e}")
         
         # Проверка на PII
         pii_detected = self.security.detect_pii(user_query)
         if pii_detected:
+            if ENHANCED_FEATURES_AVAILABLE:
+                try:
+                    error = SecurityError(
+                        "Personal data detected in query",
+                        threat_type="pii_exposure",
+                        context=create_error_context(
+                            user_id=user_id,
+                            session_id=session_id,
+                            query=user_query,
+                            request_id=request_id
+                        )
+                    )
+                    log_exception(error)
+                except Exception as e:
+                    logger.warning(f"Enhanced error handling failed: {e}")
+            
             return {
                 'error': 'Обнаружены персональные данные в запросе',
+                'request_id': request_id,
                 'sql': '',
                 'results': None,
                 'metrics': None
@@ -430,9 +690,18 @@ class BIGPTAgent:
         
         # Выполнение запроса
         try:
-            conn = sqlite3.connect(self.db_path)
-            results_df = pd.read_sql_query(sql_query, conn)
-            conn.close()
+            # Определяем тип базы данных
+            if self.db_url.startswith('postgresql'):
+                # PostgreSQL - используем SQLAlchemy для избежания предупреждений pandas
+                from sqlalchemy import create_engine
+                engine = create_engine(self.db_url)
+                results_df = pd.read_sql_query(sql_query, engine)
+                engine.dispose()
+            else:
+                # SQLite fallback
+                conn = sqlite3.connect(self.db_path)
+                results_df = pd.read_sql_query(sql_query, conn)
+                conn.close()
             
             execution_time = time.time() - start_time
             
@@ -498,10 +767,19 @@ class BIGPTAgent:
                 
                 if sql_query:
                     # Проверяем что SQL можно выполнить
-                    conn = sqlite3.connect(self.db_path)
-                    cursor = conn.cursor()
-                    cursor.execute("EXPLAIN QUERY PLAN " + sql_query)
-                    conn.close()
+                    if self.db_url.startswith('postgresql'):
+                        # PostgreSQL - используем SQLAlchemy
+                        from sqlalchemy import create_engine, text
+                        engine = create_engine(self.db_url)
+                        with engine.connect() as connection:
+                            connection.execute(text("EXPLAIN " + sql_query))
+                        engine.dispose()
+                    else:
+                        # SQLite fallback
+                        conn = sqlite3.connect(self.db_path)
+                        cursor = conn.cursor()
+                        cursor.execute("EXPLAIN QUERY PLAN " + sql_query)
+                        conn.close()
                     return sql_query, total_time
                     
             except Exception as e:
@@ -533,11 +811,9 @@ def main():
     # Парсинг аргументов командной строки
     parser = argparse.ArgumentParser(description='BI-GPT Agent - Natural Language to SQL')
     parser.add_argument('--api_key', type=str, 
-                       default="",
-                       help='API key for the model')
+                       help='API key for the model (or set LOCAL_API_KEY/OPENAI_API_KEY env var)')
     parser.add_argument('--base_url', type=str,
-                       default="https://bkwg3037dnb7aq-8000.proxy.runpod.net/v1",
-                       help='Base URL for the model API')
+                       help='Base URL for the model API (or set LOCAL_BASE_URL env var)')
     parser.add_argument('--query', type=str,
                        help='Single query to execute')
     

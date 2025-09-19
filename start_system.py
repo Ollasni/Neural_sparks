@@ -7,6 +7,13 @@ import subprocess
 import argparse
 from pathlib import Path
 
+# Загружаем переменные окружения из .env файла
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # python-dotenv не установлен
+
 def print_logo():
     """Логотип системы"""
     print("""
@@ -49,14 +56,32 @@ def check_system_requirements():
 
 def test_local_model_connection():
     """Быстрый тест подключения к модели"""
-    print("\nTesting connection to Llama-4-Scout...")
+    print("\nTesting connection to model...")
     
     try:
         from bi_gpt_agent import BIGPTAgent
         
-        # Настройки локальной модели
-        api_key = ""
-        base_url = "https://bkwg3037dnb7aq-8000.proxy.runpod.net/v1"
+        # Проверяем доступность enhanced features
+        try:
+            from config import get_settings
+            settings = get_settings()
+            api_key = settings.get_api_key()
+            base_url = settings.local_base_url if settings.model_provider.value == 'local' else None
+            print(f"Using configuration: Provider={settings.model_provider.value}")
+        except ImportError:
+            # Fallback на переменные окружения
+            import os
+            api_key = os.getenv("LOCAL_API_KEY")
+            base_url = os.getenv("LOCAL_BASE_URL")
+            
+            if not api_key or not base_url:
+                print("ERROR: No configuration available. Please:")
+                print("1. Set LOCAL_API_KEY and LOCAL_BASE_URL environment variables, OR")
+                print("2. Create .env file from env.example, OR") 
+                print("3. Install dependencies: pip install pydantic python-dotenv")
+                return False
+                
+            print("Using environment variables")
         
         print(f"URL: {base_url}")
         print(f"API Key: {api_key[:10]}...")
@@ -65,14 +90,23 @@ def test_local_model_connection():
         agent = BIGPTAgent(api_key=api_key, base_url=base_url)
         
         # Простой тест
-        result = agent.process_query("покажи всех клиентов")
+        result = agent.process_query("покажи всех клиентов", user_id="system_test")
         
         if 'error' not in result:
             print("OK: Model responds correctly")
             print(f"Generated SQL: {result['sql'][:50]}...")
+            print(f"Request ID: {result.get('request_id', 'N/A')}")
+            
+            # Показываем дополнительную информацию если доступна
+            if 'validation_details' in result:
+                validation = result['validation_details']
+                print(f"Risk Level: {validation.get('risk_level', 'unknown')}")
+                print(f"Complexity: {validation.get('complexity_score', 0)}")
+            
             return True
         else:
             print(f"ERROR: Model error: {result['error']}")
+            print(f"Error code: {result.get('error_code', 'unknown')}")
             return False
             
     except Exception as e:
@@ -86,11 +120,23 @@ def run_quick_demo():
     try:
         from bi_gpt_agent import BIGPTAgent
         
-        # Инициализация с локальной моделью
-        agent = BIGPTAgent(
-            api_key="",
-            base_url="https://bkwg3037dnb7aq-8000.proxy.runpod.net/v1"
-        )
+        # Получаем настройки для инициализации
+        try:
+            from config import get_settings
+            settings = get_settings()
+            api_key = settings.get_api_key()
+            base_url = settings.local_base_url if settings.model_provider.value == 'local' else None
+        except ImportError:
+            import os
+            api_key = os.getenv("LOCAL_API_KEY")
+            base_url = os.getenv("LOCAL_BASE_URL")
+            
+            if not api_key or not base_url:
+                print("ERROR: No API configuration available")
+                return False
+        
+        # Инициализация агента
+        agent = BIGPTAgent(api_key=api_key, base_url=base_url)
         
         # Демо запросы
         demo_queries = [
@@ -166,20 +212,27 @@ def main():
     """Главная функция запуска"""
     # Парсинг аргументов
     parser = argparse.ArgumentParser(description='BI-GPT Agent Launcher')
-    parser.add_argument('--api_key', type=str, 
-                       default="",
-                       help='API key for the model')
+    parser.add_argument('--api_key', type=str,
+                       help='API key for the model (overrides env vars)')
     parser.add_argument('--base_url', type=str,
-                       default="https://bkwg3037dnb7aq-8000.proxy.runpod.net/v1",
-                       help='Base URL for the model API')
+                       help='Base URL for the model API (overrides env vars)')
     parser.add_argument('--skip_demo', action='store_true',
                        help='Skip initial demo')
     
     args = parser.parse_args()
     
     print_logo()
-    print(f"Model: {args.base_url}")
-    print(f"API Key: {args.api_key[:10]}...")
+    
+    # Безопасное отображение настроек
+    if args.base_url:
+        print(f"Model: {args.base_url}")
+    else:
+        print("Model: будет загружен из переменных окружения")
+    
+    if args.api_key:
+        print(f"API Key: {args.api_key[:10]}...")
+    else:
+        print("API Key: будет загружен из переменных окружения")
     
     # Проверка требований
     if not check_system_requirements():
