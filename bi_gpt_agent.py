@@ -24,10 +24,7 @@ except ImportError:
     pass  # python-dotenv не установлен
 
 import openai
-from langchain.llms import OpenAI
-from langchain.chains import LLMChain
-from langchain.prompts import PromptTemplate
-from langchain.memory import ConversationBufferMemory
+# Langchain imports removed - not used in current implementation
 import pandas as pd
 from sqlalchemy import create_engine, text, MetaData, inspect
 from pydantic import BaseModel, Field
@@ -37,7 +34,7 @@ import plotly.graph_objects as go
 
 # Импорт новых систем (с обработкой ошибок импорта)
 try:
-    from config import get_settings, validate_config, ConfigurationError
+    from config import get_settings, validate_config
     from exceptions import (
         BIGPTException, ValidationError, SecurityError, SQLValidationError,
         ModelError, DatabaseError, PerformanceError, NetworkError,
@@ -195,6 +192,7 @@ class SQLGenerator:
             
         self.business_dict = BusinessDictionary()
         self.security = SecurityValidator()
+        self.logger = logger  # Добавляем logger для совместимости
         
         # Few-shot промпт с примерами (сложный)
         self.sql_prompt_few_shot = """
@@ -405,6 +403,39 @@ SQL:"""
         
         return sql
     
+    def _remove_unwanted_prefixes(self, sql_query: str) -> str:
+        """Удаляет нежелательные префиксы из SQL запроса"""
+        # Список нежелательных префиксов (в порядке от длинных к коротким)
+        unwanted_prefixes = [
+            'EXPLAIN QUERY PLAN ',
+            'WITH RECURSIVE ',
+            'EXPLAIN ',
+            'DESCRIBE ',
+            'DESC ',
+            'SHOW ',
+            'WITH ',
+        ]
+        
+        # Проверяем и удаляем префиксы
+        original_query = sql_query
+        for prefix in unwanted_prefixes:
+            if sql_query.upper().startswith(prefix.upper()):
+                sql_query = sql_query[len(prefix):].strip()
+                logger.info(f"Удален префикс '{prefix}' из SQL: {original_query[:50]}...")
+                break
+        
+        # Специальная обработка для SELECT TOP (SQL Server синтаксис)
+        if re.match(r'^SELECT\s+TOP\s+\d+\s+', sql_query, re.IGNORECASE):
+            # Заменяем SELECT TOP N на SELECT с LIMIT
+            match = re.match(r'^SELECT\s+TOP\s+(\d+)\s+(.*)', sql_query, re.IGNORECASE | re.DOTALL)
+            if match:
+                limit_num = match.group(1)
+                rest_query = match.group(2)
+                sql_query = f"SELECT {rest_query} LIMIT {limit_num}"
+                logger.info(f"Заменен SELECT TOP {limit_num} на SELECT ... LIMIT {limit_num}")
+        
+        return sql_query
+    
     def _fix_order_by_clause(self, sql: str) -> str:
         """Исправляет неполные ORDER BY клаузулы"""
         import re
@@ -455,9 +486,12 @@ class BIGPTAgent:
                 self.db_url = self.settings.database_url if self.settings else f"postgresql://olgasnissarenko@localhost:5432/bi_demo"
                 
                 # Валидация конфигурации
-                config_errors = validate_config()
-                if config_errors and self.settings.is_production:
-                    raise ConfigurationError(f"Configuration validation failed: {'; '.join(config_errors)}")
+                try:
+                    config_errors = validate_config()
+                    if config_errors and hasattr(self.settings, 'is_production') and self.settings.is_production:
+                        raise ValueError(f"Configuration validation failed: {'; '.join(config_errors)}")
+                except Exception as e:
+                    self.logger.warning(f"Configuration validation skipped: {e}")
                     
                 self.logger.info("BI-GPT Agent initializing with enhanced features")
                 
@@ -519,12 +553,43 @@ class BIGPTAgent:
             print("✅ Используется OpenAI GPT-4")
         else:
             # Используем пользовательскую API модель
-            if base_url:
+            if ENHANCED_FEATURES_AVAILABLE and self.settings:
+                # Получаем конфигурацию из настроек (включая env переменные)
+                try:
+                    model_config = self.settings.get_model_config()
+                    api_key = model_config.get('api_key')
+                    base_url = model_config.get('base_url')
+                    
+                    self.sql_generator = SQLGenerator(api_key, base_url)
+                    print(f"✅ Используется пользовательская API модель: {base_url}")
+                except Exception as e:
+                    print(f"❌ Ошибка получения конфигурации: {e}")
+                    # Fallback к переменным окружения
+                    import os
+                    env_base_url = os.getenv("LOCAL_BASE_URL")
+                    env_api_key = os.getenv("LOCAL_API_KEY")
+                    
+                    if env_base_url:
+                        self.sql_generator = SQLGenerator(env_api_key, env_base_url)
+                        print(f"✅ Используется пользовательская API модель из env: {env_base_url}")
+                    else:
+                        raise Exception("Не удалось получить конфигурацию для пользовательской API модели")
+            elif base_url:
+                # Fallback для случаев без настроек
                 self.sql_generator = SQLGenerator(api_key, base_url)
                 print(f"✅ Используется пользовательская API модель: {base_url}")
             else:
-                print("❌ Не указан base_url для пользовательской API модели")
-                raise Exception("Для пользовательской API модели требуется base_url")
+                # Последняя попытка - переменные окружения
+                import os
+                env_base_url = os.getenv("LOCAL_BASE_URL")
+                env_api_key = os.getenv("LOCAL_API_KEY")
+                
+                if env_base_url:
+                    self.sql_generator = SQLGenerator(env_api_key, env_base_url)
+                    print(f"✅ Используется пользовательская API модель из env: {env_base_url}")
+                else:
+                    print("❌ Не указан base_url для пользовательской API модели")
+                    raise Exception("Для пользовательской API модели требуется base_url")
             
         self.security = SecurityValidator()
         self.metrics_history = []
@@ -851,7 +916,7 @@ class BIGPTAgent:
         for prefix in unwanted_prefixes:
             if sql_query.upper().startswith(prefix.upper()):
                 sql_query = sql_query[len(prefix):].strip()
-                self.logger.info(f"Удален префикс '{prefix}' из SQL: {original_query[:50]}...")
+                logger.info(f"Удален префикс '{prefix}' из SQL: {original_query[:50]}...")
                 break
         
         # Специальная обработка для SELECT TOP (SQL Server синтаксис)
@@ -861,7 +926,7 @@ class BIGPTAgent:
                 limit_num = match.group(1)
                 rest_query = match.group(2)
                 sql_query = f"SELECT {rest_query} LIMIT {limit_num}"
-                self.logger.info(f"Заменен SELECT TOP {limit_num} на SELECT ... LIMIT {limit_num}")
+                logger.info(f"Заменен SELECT TOP {limit_num} на SELECT ... LIMIT {limit_num}")
         
         return sql_query
     
@@ -884,7 +949,7 @@ class BIGPTAgent:
                     if len(params) >= 4:  # SQLGenerator: (self, user_query, temperature, max_tokens, prompt_mode)
                         sql_query, gen_time = self.sql_generator.generate_sql(user_query, temperature, max_tokens, prompt_mode)
                     else:  # FineTunedSQLGenerator: (self, user_query, schema_info)
-                        sql_query, gen_time = self.sql_generator.generate_sql(user_query)
+                        sql_query, gen_time = self.sql_generator.generate_sql(user_query, None)
                 else:
                     raise AttributeError("SQL generator does not have generate_sql method")
                 total_time += gen_time
@@ -893,7 +958,7 @@ class BIGPTAgent:
                     # Очищаем SQL от нежелательных префиксов перед валидацией
                     cleaned_sql = self._remove_unwanted_prefixes(sql_query)
                     if cleaned_sql != sql_query:
-                        self.logger.info(f"SQL очищен: '{sql_query[:50]}...' → '{cleaned_sql[:50]}...'")
+                        logger.info(f"SQL очищен: '{sql_query[:50]}...' → '{cleaned_sql[:50]}...'")
                     
                     # Проверяем что SQL можно выполнить в PostgreSQL
                     validation_error = None
@@ -939,6 +1004,21 @@ class BIGPTAgent:
         
         logger.error(f"Все попытки генерации SQL не удались. Последняя ошибка: {last_error}")
         return "", total_time, attempts_info
+    
+    def generate_sql(self, user_query: str, temperature: float = 0.0, max_tokens: int = 400, prompt_mode: str = "few_shot") -> Tuple[str, float]:
+        """Генерирует SQL запрос для пользовательского вопроса"""
+        if not hasattr(self, 'sql_generator') or not self.sql_generator:
+            raise Exception("SQL генератор не инициализирован")
+        
+        # Проверяем сигнатуру метода генератора
+        import inspect
+        sig = inspect.signature(self.sql_generator.generate_sql)
+        params = list(sig.parameters.keys())
+        
+        if len(params) >= 4:  # SQLGenerator: (self, user_query, temperature, max_tokens, prompt_mode)
+            return self.sql_generator.generate_sql(user_query, temperature, max_tokens, prompt_mode)
+        else:  # FineTunedSQLGenerator: (self, user_query, schema_info)
+            return self.sql_generator.generate_sql(user_query, None)
     
     def get_performance_metrics(self) -> Dict[str, float]:
         """Возвращает метрики производительности"""

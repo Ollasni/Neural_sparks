@@ -325,13 +325,16 @@ def render_natural_language_query():
     # Примеры запросов
     if st.session_state.get('show_examples', False):
         st.info("""
-        **Примеры запросов:**
-        - Покажи всех клиентов из Москвы
-        - Какая средняя сумма заказа по месяцам?
-        - Топ-10 товаров по продажам
-        - Покажи динамику выручки за последний год
-        - Сколько заказов было вчера?
-        """)
+            **Примеры запросов:**
+            - Покажи список всех клиентов
+            - Какие продукты есть в категории "Electronics"?
+            - Какие товары приносят больше всего выручки?
+            - Сколько всего товаров на складе по категориям?
+            - Какая прибыль по каждому заказу?
+            - В каких складах хранится товар "Laptop"?
+            - Какие продукты приносят наибольшую прибыль (выручка – затраты)?
+            """)
+
     
     if generate_clicked and user_query:
         # Показываем параметры генерации
@@ -666,6 +669,128 @@ def render_query_history():
                 if not item['success']:
                     st.error("❌ Ошибка")
 
+def render_sql_executor():
+    """Рендер интерфейса для выполнения SQL запросов"""
+    if not st.session_state.engine:
+        st.info("🔌 Сначала подключитесь к базе данных")
+        return
+    
+    st.subheader("⚡ SQL Executor")
+    st.markdown("Выполните SQL запрос напрямую в базе данных")
+    
+    # Поле ввода SQL
+    sql_query = st.text_area(
+        "Введите SQL запрос:",
+        value=st.session_state.get('current_sql', ''),
+        height=200,
+        placeholder="SELECT * FROM customers LIMIT 10;",
+        help="Введите PostgreSQL SQL запрос для выполнения"
+    )
+    
+    # Кнопки для SQL
+    col_sql1, col_sql2, col_sql3 = st.columns(3)
+    
+    with col_sql1:
+        execute_sql_btn = st.button("🚀 Выполнить SQL", type="primary")
+    
+    with col_sql2:
+        if st.button("🗑️ Очистить"):
+            st.session_state['current_sql'] = ''
+            st.rerun()
+    
+    with col_sql3:
+        if st.button("📋 Примеры"):
+            st.session_state['show_sql_examples'] = not st.session_state.get('show_sql_examples', False)
+    
+    # Примеры SQL запросов
+    if st.session_state.get('show_sql_examples', False):
+        st.info("**Примеры SQL запросов:**")
+        examples = [
+            "SELECT * FROM customers LIMIT 10;",
+            "SELECT name, email FROM customers WHERE segment = 'Premium';",
+            "SELECT COUNT(*) as total_orders FROM orders;",
+            "SELECT p.name, p.category, i.current_stock FROM products p JOIN inventory i ON p.id = i.product_id;",
+            "SELECT c.name, SUM(o.amount) as total_spent FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name ORDER BY total_spent DESC LIMIT 5;"
+        ]
+        
+        for example in examples:
+            if st.button(f"📝 {example[:50]}...", key=f"sql_example_{example[:20]}"):
+                st.session_state['current_sql'] = example
+                st.rerun()
+    
+    # Выполнение SQL запроса
+    if execute_sql_btn and sql_query.strip():
+        with st.spinner("Выполняю SQL запрос..."):
+            try:
+                # Выполняем SQL напрямую через engine
+                results_df = pd.read_sql_query(sql_query, st.session_state.engine)
+                
+                st.success("✅ SQL запрос выполнен успешно!")
+                
+                # Отображаем результаты
+                if not results_df.empty:
+                    st.subheader("📊 Результаты запроса:")
+                    st.dataframe(results_df, use_container_width=True)
+                    
+                    # Базовая статистика
+                    col_stat1, col_stat2 = st.columns(2)
+                    with col_stat1:
+                        st.metric("Строк", len(results_df))
+                    with col_stat2:
+                        st.metric("Столбцов", len(results_df.columns))
+                    
+                    # Простая визуализация для числовых данных
+                    numeric_cols = results_df.select_dtypes(include=['number']).columns
+                    if len(numeric_cols) > 0 and len(results_df) <= 50:
+                        st.subheader("📈 Быстрая визуализация")
+                        
+                        if len(results_df) > 1:
+                            chart_type = st.selectbox("Тип графика:", ["Столбчатая", "Линейная"], key="sql_chart_type")
+                            x_col = st.selectbox("Ось X:", results_df.columns, key="sql_x_axis")
+                            y_col = st.selectbox("Ось Y:", numeric_cols, key="sql_y_axis")
+                            
+                            if chart_type == "Столбчатая":
+                                fig = px.bar(results_df, x=x_col, y=y_col, title=f"{y_col} по {x_col}")
+                            else:
+                                fig = px.line(results_df, x=x_col, y=y_col, title=f"{y_col} по {x_col}")
+                            
+                            st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("Запрос выполнен, но данных не найдено")
+                
+                # Сохраняем SQL в session state
+                st.session_state['current_sql'] = sql_query
+                
+                # Сохраняем в историю
+                history_item = {
+                    'query': f"SQL: {sql_query[:100]}...",
+                    'sql': sql_query,
+                    'timestamp': datetime.now(),
+                    'success': True,
+                    'execution_time': 0.1,  # Примерное время
+                    'model': 'Direct SQL'
+                }
+                st.session_state.query_history.append(history_item)
+                
+            except Exception as e:
+                st.error(f"❌ Ошибка выполнения SQL: {str(e)}")
+                
+                # Анализ ошибки
+                error_analysis = analyze_sql_error(str(e))
+                if error_analysis:
+                    st.info(f"💡 **Анализ ошибки:** {error_analysis}")
+                
+                # Сохраняем ошибку в историю
+                history_item = {
+                    'query': f"SQL: {sql_query[:100]}...",
+                    'sql': sql_query,
+                    'timestamp': datetime.now(),
+                    'success': False,
+                    'error': str(e),
+                    'model': 'Direct SQL'
+                }
+                st.session_state.query_history.append(history_item)
+
 def render_performance_metrics():
     """Рендер метрик производительности"""
     if not st.session_state.agent:
@@ -820,7 +945,7 @@ def main():
         return
     
     # Основной контент
-    tab1, tab2, tab3, tab4 = st.tabs(["🗄️ Схема БД", "💬 Естественный язык", "📚 История", "📊 Метрики"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🗄️ Схема БД", "💬 Естественный язык", "⚡ SQL Executor", "📚 История", "📊 Метрики"])
     
     with tab1:
         render_schema_overview()
@@ -829,9 +954,12 @@ def main():
         render_natural_language_query()
     
     with tab3:
-        render_query_history()
+        render_sql_executor()
     
     with tab4:
+        render_query_history()
+    
+    with tab5:
         render_performance_metrics()
     
     # Футер

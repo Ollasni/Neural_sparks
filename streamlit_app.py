@@ -181,6 +181,37 @@ def display_risk_analysis(risk_analysis):
             st.write(f"• {rec}")
 
 
+def analyze_sql_error(error_message: str) -> str:
+    """Анализирует ошибку SQL и возвращает рекомендации"""
+    error_lower = error_message.lower()
+    
+    if "column" in error_lower and "does not exist" in error_lower:
+        return "Ошибка: обращение к несуществующей колонке. Проверьте правильность названий полей в схеме БД."
+    
+    elif "table" in error_lower and ("does not exist" in error_lower or "doesn't exist" in error_lower):
+        return "Ошибка: обращение к несуществующей таблице. Проверьте правильность названий таблиц в схеме БД."
+    
+    elif "syntax error" in error_lower:
+        return "Ошибка синтаксиса SQL. Проверьте правильность написания SQL команд."
+    
+    elif "permission denied" in error_lower or "access denied" in error_lower:
+        return "Ошибка доступа. Недостаточно прав для выполнения операции."
+    
+    elif "foreign key" in error_lower:
+        return "Ошибка внешнего ключа. Проверьте связи между таблицами."
+    
+    elif "duplicate key" in error_lower:
+        return "Ошибка дублирования ключа. Попытка вставить дублирующееся значение в уникальное поле."
+    
+    elif "timeout" in error_lower:
+        return "Превышено время ожидания. Запрос выполняется слишком долго."
+    
+    elif "connection" in error_lower:
+        return "Ошибка подключения к базе данных. Проверьте соединение."
+    
+    else:
+        return "Неизвестная ошибка. Проверьте синтаксис SQL и схему базы данных."
+
 def create_result_visualization(df, query_type):
     """Создает визуализацию результатов"""
     if df.empty:
@@ -364,141 +395,358 @@ LOCAL_BASE_URL=your_api_url""")
         st.error(f"❌ Ошибка инициализации агента: {e}")
         st.stop()
     
-    # Основная область
-    col1, col2 = st.columns([2, 1])
+    # Основная область - вкладки
+    tab1, tab2 = st.tabs(["💬 Умный Аналитик", "⚡ SQL Executor"])
     
-    with col1:
-        st.header("Natural Language Query")
+    with tab1:
+        col1, col2 = st.columns([2, 1])
         
-        # Поле ввода запроса
-        user_query = st.text_area(
-            "Enter your question:",
-            value=st.session_state.get('current_query', ''),
-            height=100,
-            placeholder="Example: покажи прибыль за последние 2 дня"
+        with col1:
+            st.header("Natural Language Query")
+            
+            # Поле ввода запроса
+            user_query = st.text_area(
+                "Enter your question:",
+                value=st.session_state.get('current_query', ''),
+                height=100,
+                placeholder="Example: покажи прибыль за последние 2 дня"
+            )
+            
+            # Кнопки действий
+            col_btn1, col_btn2, col_btn3, col_btn4 = st.columns(4)
+            
+            with col_btn1:
+                process_btn = st.button("Execute Query", type="primary")
+            
+            with col_btn2:
+                if st.button("Clear"):
+                    st.session_state['current_query'] = ''
+                    st.rerun()
+            
+            with col_btn3:
+                if st.button("Show DB Schema"):
+                    st.session_state['show_schema'] = True
+            
+            with col_btn4:
+                if st.button("⚡ Execute SQL"):
+                    st.session_state['show_sql_input'] = not st.session_state.get('show_sql_input', False)
+        
+        with col2:
+            st.header("Performance Metrics")
+            display_metrics_dashboard(agent)
+        
+        # Обработка запроса Natural Language
+        if process_btn and user_query.strip():
+            with st.spinner("Processing query and generating SQL..."):
+                start_time = time.time()
+                # Получаем параметры модели из session state
+                temperature = st.session_state.get('temperature', 0.0)
+                max_tokens = st.session_state.get('max_tokens', 400)
+                result = agent.process_query(user_query, temperature=temperature, max_tokens=max_tokens)
+                processing_time = time.time() - start_time
+            
+            # Отображение результатов
+            if 'error' in result:
+                st.error(f"Error: {result['error']}")
+                if result.get('sql'):
+                    st.code(result['sql'], language='sql')
+                # Показываем анализ риска даже для ошибок
+                if result.get('risk_analysis'):
+                    display_risk_analysis(result['risk_analysis'])
+            else:
+                st.success("Query executed successfully")
+                
+                # Отображаем анализ риска перед вкладками
+                if result.get('risk_analysis'):
+                    display_risk_analysis(result['risk_analysis'])
+                
+                # Вкладки для результатов
+                tab1, tab2, tab3, tab4 = st.tabs(["Results", "SQL", "Visualization", "Analysis"])
+                
+                with tab1:
+                    st.subheader("Query Results")
+                    df = result['results']
+                    
+                    if df.empty:
+                        st.info("No data returned")
+                    else:
+                        st.dataframe(df, use_container_width=True)
+                        
+                        # Базовая статистика
+                        if len(df) > 0:
+                            col_stat1, col_stat2 = st.columns(2)
+                            with col_stat1:
+                                st.metric("Rows", len(df))
+                            with col_stat2:
+                                st.metric("Columns", len(df.columns))
+                
+                with tab2:
+                    st.subheader("Generated SQL")
+                    st.code(result['sql'], language='sql')
+                    
+                    # Показываем параметры модели
+                    col_param1, col_param2 = st.columns(2)
+                    with col_param1:
+                        st.metric("Temperature", f"{temperature:.1f}")
+                    with col_param2:
+                        st.metric("Max Tokens", max_tokens)
+                    
+                    # Информация о бизнес-терминах
+                    if result.get('business_terms'):
+                        st.subheader("Business Terms Used")
+                        for term in result['business_terms']:
+                            st.text(f"- {term}")
+                
+                with tab3:
+                    st.subheader("Визуализация данных")
+                    if not result['results'].empty:
+                        fig = create_result_visualization(result['results'], user_query)
+                        if fig:
+                            st.plotly_chart(fig, use_container_width=True)
+                        else:
+                            st.info("Автоматическая визуализация недоступна для данного типа данных")
+                            
+                            # Предложение ручной визуализации
+                            numeric_cols = result['results'].select_dtypes(include=['number']).columns
+                            if len(numeric_cols) > 0:
+                                st.subheader("Ручная настройка графика")
+                                chart_type = st.selectbox("Тип графика", ["Столбчатая диаграмма", "Круговая диаграмма", "Линейный график"])
+                                
+                                if chart_type == "Столбчатая диаграмма" and len(result['results']) <= 50:
+                                    x_axis = st.selectbox("Ось X", result['results'].columns)
+                                    y_axis = st.selectbox("Ось Y", numeric_cols)
+                                    
+                                    if st.button("Построить график"):
+                                        fig = px.bar(result['results'], x=x_axis, y=y_axis)
+                                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.info("Нет данных для визуализации")
+                
+                with tab4:
+                    st.subheader("🧠 Интеллектуальный анализ")
+                    st.write(result.get('explanation', 'Анализ недоступен'))
+                    
+                    # Метрики запроса
+                    if result.get('metrics'):
+                        metrics = result['metrics']
+                        
+                        metric_col1, metric_col2, metric_col3 = st.columns(3)
+                        with metric_col1:
+                            st.metric("Время выполнения", f"{metrics.execution_time:.2f}s")
+                        with metric_col2:
+                            st.metric("Бизнес-термины", metrics.business_terms_used)
+                        with metric_col3:
+                            st.metric("Точность", f"{metrics.aggregation_accuracy:.1%}")
+        
+        # SQL Executor на той же вкладке
+        if st.session_state.get('show_sql_input', False):
+            st.markdown("---")
+            st.subheader("⚡ SQL Executor")
+            st.markdown("Выполните SQL запрос напрямую в базе данных")
+            
+            # Поле ввода SQL
+            sql_query = st.text_area(
+                "Enter SQL query:",
+                value=st.session_state.get('current_sql', ''),
+                height=150,
+                placeholder="SELECT * FROM customers LIMIT 10;",
+                help="Введите PostgreSQL SQL запрос для выполнения",
+                key="sql_input_main_tab"
+            )
+            
+            # Кнопки для SQL
+            col_sql1, col_sql2, col_sql3 = st.columns(3)
+            
+            with col_sql1:
+                execute_sql_btn = st.button("🚀 Execute SQL", type="primary", key="execute_sql_main")
+            
+            with col_sql2:
+                if st.button("🗑️ Clear SQL", key="clear_sql_main"):
+                    st.session_state['current_sql'] = ''
+                    st.rerun()
+            
+            with col_sql3:
+                if st.button("📋 Examples", key="examples_sql_main"):
+                    st.session_state['show_sql_examples_main'] = not st.session_state.get('show_sql_examples_main', False)
+            
+            # Примеры SQL запросов
+            if st.session_state.get('show_sql_examples_main', False):
+                st.info("**Примеры SQL запросов:**")
+                examples = [
+                    "SELECT * FROM customers LIMIT 10;",
+                    "SELECT name, email FROM customers WHERE segment = 'Premium';",
+                    "SELECT COUNT(*) as total_orders FROM orders;",
+                    "SELECT p.name, p.category, i.current_stock FROM products p JOIN inventory i ON p.id = i.product_id;",
+                    "SELECT c.name, SUM(o.amount) as total_spent FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name ORDER BY total_spent DESC LIMIT 5;"
+                ]
+                
+                for example in examples:
+                    if st.button(f"📝 {example[:50]}...", key=f"example_main_{example[:20]}"):
+                        st.session_state['current_sql'] = example
+                        st.rerun()
+            
+            # Выполнение SQL запроса
+            if execute_sql_btn and sql_query.strip():
+                with st.spinner("Executing SQL query..."):
+                    try:
+                        # Выполняем SQL напрямую через агента
+                        from sqlalchemy import create_engine
+                        import os
+                        
+                        # Получаем URL базы данных из агента
+                        db_url = agent.db_url if hasattr(agent, 'db_url') else os.getenv("DATABASE_URL", "postgresql://olgasnissarenko:@localhost:5432/bi_demo")
+                        
+                        engine = create_engine(db_url)
+                        results_df = pd.read_sql_query(sql_query, engine)
+                        engine.dispose()
+                        
+                        st.success("✅ SQL запрос выполнен успешно!")
+                        
+                        # Отображаем результаты
+                        if not results_df.empty:
+                            st.subheader("📊 Результаты SQL запроса:")
+                            st.dataframe(results_df, use_container_width=True)
+                            
+                            # Базовая статистика
+                            col_stat1, col_stat2 = st.columns(2)
+                            with col_stat1:
+                                st.metric("Строк", len(results_df))
+                            with col_stat2:
+                                st.metric("Столбцов", len(results_df.columns))
+                            
+                            # Простая визуализация для числовых данных
+                            numeric_cols = results_df.select_dtypes(include=['number']).columns
+                            if len(numeric_cols) > 0 and len(results_df) <= 50:
+                                st.subheader("📈 Быстрая визуализация")
+                                
+                                if len(results_df) > 1:
+                                    chart_type = st.selectbox("Тип графика:", ["Столбчатая", "Линейная"], key="sql_chart_type_main")
+                                    x_col = st.selectbox("Ось X:", results_df.columns, key="sql_x_axis_main")
+                                    y_col = st.selectbox("Ось Y:", numeric_cols, key="sql_y_axis_main")
+                                    
+                                    if chart_type == "Столбчатая":
+                                        fig = px.bar(results_df, x=x_col, y=y_col, title=f"{y_col} по {x_col}")
+                                    else:
+                                        fig = px.line(results_df, x=x_col, y=y_col, title=f"{y_col} по {x_col}")
+                                    
+                                    st.plotly_chart(fig, use_container_width=True)
+                        else:
+                            st.info("Запрос выполнен, но данных не найдено")
+                        
+                        # Сохраняем SQL в session state
+                        st.session_state['current_sql'] = sql_query
+                        
+                    except Exception as e:
+                        st.error(f"❌ Ошибка выполнения SQL: {str(e)}")
+                        
+                        # Анализ ошибки
+                        error_analysis = analyze_sql_error(str(e))
+                        if error_analysis:
+                            st.info(f"💡 **Анализ ошибки:** {error_analysis}")
+    
+    with tab2:
+        st.header("⚡ SQL Executor")
+        st.markdown("Выполните SQL запрос напрямую в базе данных")
+        
+        # Поле ввода SQL
+        sql_query = st.text_area(
+            "Enter SQL query:",
+            value=st.session_state.get('current_sql', ''),
+            height=200,
+            placeholder="SELECT * FROM customers LIMIT 10;",
+            help="Введите PostgreSQL SQL запрос для выполнения"
         )
         
-        # Кнопки действий
-        col_btn1, col_btn2, col_btn3 = st.columns(3)
+        # Кнопки для SQL
+        col_sql1, col_sql2, col_sql3 = st.columns(3)
         
-        with col_btn1:
-            process_btn = st.button("Execute Query", type="primary")
+        with col_sql1:
+            execute_sql_btn = st.button("🚀 Execute SQL", type="primary")
         
-        with col_btn2:
-            if st.button("Clear"):
-                st.session_state['current_query'] = ''
+        with col_sql2:
+            if st.button("🗑️ Clear SQL"):
+                st.session_state['current_sql'] = ''
                 st.rerun()
         
-        with col_btn3:
-            if st.button("Show DB Schema"):
-                st.session_state['show_schema'] = True
-    
-    with col2:
-        st.header("Performance Metrics")
-        display_metrics_dashboard(agent)
-    
-    # Обработка запроса
-    if process_btn and user_query.strip():
-        with st.spinner("Processing query and generating SQL..."):
-            start_time = time.time()
-            # Получаем параметры модели из session state
-            temperature = st.session_state.get('temperature', 0.0)
-            max_tokens = st.session_state.get('max_tokens', 400)
-            result = agent.process_query(user_query, temperature=temperature, max_tokens=max_tokens)
-            processing_time = time.time() - start_time
+        with col_sql3:
+            if st.button("📋 Examples"):
+                st.session_state['show_sql_examples'] = not st.session_state.get('show_sql_examples', False)
         
-        # Отображение результатов
-        if 'error' in result:
-            st.error(f"Error: {result['error']}")
-            if result.get('sql'):
-                st.code(result['sql'], language='sql')
-            # Показываем анализ риска даже для ошибок
-            if result.get('risk_analysis'):
-                display_risk_analysis(result['risk_analysis'])
-        else:
-            st.success("Query executed successfully")
+        # Примеры SQL запросов
+        if st.session_state.get('show_sql_examples', False):
+            st.info("**Примеры SQL запросов:**")
+            examples = [
+                "SELECT * FROM customers LIMIT 10;",
+                "SELECT name, email FROM customers WHERE segment = 'Premium';",
+                "SELECT COUNT(*) as total_orders FROM orders;",
+                "SELECT p.name, p.category, i.current_stock FROM products p JOIN inventory i ON p.id = i.product_id;",
+                "SELECT c.name, SUM(o.amount) as total_spent FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name ORDER BY total_spent DESC LIMIT 5;"
+            ]
             
-            # Отображаем анализ риска перед вкладками
-            if result.get('risk_analysis'):
-                display_risk_analysis(result['risk_analysis'])
-            
-            # Вкладки для результатов
-            tab1, tab2, tab3, tab4 = st.tabs(["Results", "SQL", "Visualization", "Analysis"])
-            
-            with tab1:
-                st.subheader("Query Results")
-                df = result['results']
-                
-                if df.empty:
-                    st.info("No data returned")
-                else:
-                    st.dataframe(df, use_container_width=True)
+            for example in examples:
+                if st.button(f"📝 {example[:50]}...", key=f"example_{example[:20]}"):
+                    st.session_state['current_sql'] = example
+                    st.rerun()
+        
+        # Выполнение SQL запроса
+        if execute_sql_btn and sql_query.strip():
+            with st.spinner("Executing SQL query..."):
+                try:
+                    # Выполняем SQL напрямую через агента
+                    from sqlalchemy import create_engine
+                    import os
                     
-                    # Базовая статистика
-                    if len(df) > 0:
+                    # Получаем URL базы данных из агента
+                    db_url = agent.db_url if hasattr(agent, 'db_url') else os.getenv("DATABASE_URL", "postgresql://olgasnissarenko:@localhost:5432/bi_demo")
+                    
+                    engine = create_engine(db_url)
+                    results_df = pd.read_sql_query(sql_query, engine)
+                    engine.dispose()
+                    
+                    st.success("✅ SQL запрос выполнен успешно!")
+                    
+                    # Отображаем результаты
+                    if not results_df.empty:
+                        st.subheader("📊 Результаты запроса:")
+                        st.dataframe(results_df, use_container_width=True)
+                        
+                        # Базовая статистика
                         col_stat1, col_stat2 = st.columns(2)
                         with col_stat1:
-                            st.metric("Rows", len(df))
+                            st.metric("Строк", len(results_df))
                         with col_stat2:
-                            st.metric("Columns", len(df.columns))
-            
-            with tab2:
-                st.subheader("Generated SQL")
-                st.code(result['sql'], language='sql')
-                
-                # Показываем параметры модели
-                col_param1, col_param2 = st.columns(2)
-                with col_param1:
-                    st.metric("Temperature", f"{temperature:.1f}")
-                with col_param2:
-                    st.metric("Max Tokens", max_tokens)
-                
-                # Информация о бизнес-терминах
-                if result.get('business_terms'):
-                    st.subheader("Business Terms Used")
-                    for term in result['business_terms']:
-                        st.text(f"- {term}")
-            
-            with tab3:
-                st.subheader("Визуализация данных")
-                if not result['results'].empty:
-                    fig = create_result_visualization(result['results'], user_query)
-                    if fig:
-                        st.plotly_chart(fig, use_container_width=True)
-                    else:
-                        st.info("Автоматическая визуализация недоступна для данного типа данных")
+                            st.metric("Столбцов", len(results_df.columns))
                         
-                        # Предложение ручной визуализации
-                        numeric_cols = result['results'].select_dtypes(include=['number']).columns
-                        if len(numeric_cols) > 0:
-                            st.subheader("Ручная настройка графика")
-                            chart_type = st.selectbox("Тип графика", ["Столбчатая диаграмма", "Круговая диаграмма", "Линейный график"])
+                        # Простая визуализация для числовых данных
+                        numeric_cols = results_df.select_dtypes(include=['number']).columns
+                        if len(numeric_cols) > 0 and len(results_df) <= 50:
+                            st.subheader("📈 Быстрая визуализация")
                             
-                            if chart_type == "Столбчатая диаграмма" and len(result['results']) <= 50:
-                                x_axis = st.selectbox("Ось X", result['results'].columns)
-                                y_axis = st.selectbox("Ось Y", numeric_cols)
+                            if len(results_df) > 1:
+                                chart_type = st.selectbox("Тип графика:", ["Столбчатая", "Линейная"], key="sql_chart_type")
+                                x_col = st.selectbox("Ось X:", results_df.columns, key="sql_x_axis")
+                                y_col = st.selectbox("Ось Y:", numeric_cols, key="sql_y_axis")
                                 
-                                if st.button("Построить график"):
-                                    fig = px.bar(result['results'], x=x_axis, y=y_axis)
-                                    st.plotly_chart(fig, use_container_width=True)
-                else:
-                    st.info("Нет данных для визуализации")
-            
-            with tab4:
-                st.subheader("🧠 Интеллектуальный анализ")
-                st.write(result.get('explanation', 'Анализ недоступен'))
-                
-                # Метрики запроса
-                if result.get('metrics'):
-                    metrics = result['metrics']
+                                if chart_type == "Столбчатая":
+                                    fig = px.bar(results_df, x=x_col, y=y_col, title=f"{y_col} по {x_col}")
+                                else:
+                                    fig = px.line(results_df, x=x_col, y=y_col, title=f"{y_col} по {x_col}")
+                                
+                                st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.info("Запрос выполнен, но данных не найдено")
                     
-                    metric_col1, metric_col2, metric_col3 = st.columns(3)
-                    with metric_col1:
-                        st.metric("Время выполнения", f"{metrics.execution_time:.2f}s")
-                    with metric_col2:
-                        st.metric("Бизнес-термины", metrics.business_terms_used)
-                    with metric_col3:
-                        st.metric("Точность", f"{metrics.aggregation_accuracy:.1%}")
+                    # Сохраняем SQL в session state
+                    st.session_state['current_sql'] = sql_query
+                    
+                except Exception as e:
+                    st.error(f"❌ Ошибка выполнения SQL: {str(e)}")
+                    
+                    # Анализ ошибки
+                    error_analysis = analyze_sql_error(str(e))
+                    if error_analysis:
+                        st.info(f"💡 **Анализ ошибки:** {error_analysis}")
+    
     
     # Показ схемы БД
     if st.session_state.get('show_schema'):
