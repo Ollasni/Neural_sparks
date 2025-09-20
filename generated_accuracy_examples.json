@@ -1,0 +1,752 @@
+[
+  {
+    "id": "generated_001",
+    "question": "Заказы с информацией о клиентах",
+    "expected_sql": "SELECT o.id, o.amount, c.name FROM orders o JOIN customers c ON o.customer_id = c.id LIMIT 999"
+  },
+  {
+    "id": "generated_002",
+    "question": "Продажи с количеством больше 5",
+    "expected_sql": "SELECT * FROM sales WHERE quantity > 8 LIMIT 1003"
+  },
+  {
+    "id": "generated_003",
+    "question": "Средняя маржинальность по категориям",
+    "expected_sql": "SELECT p.category, AVG((s.revenue - s.costs) / s.revenue * 100) FROM products p JOIN sales s ON p.id = s.product_id GROUP BY p.category LIMIT 1000"
+  },
+  {
+    "id": "generated_004",
+    "question": "Сколько клиентов в базе",
+    "expected_sql": "SELECT COUNT(*) FROM customers LIMIT 998"
+  },
+  {
+    "id": "generated_005",
+    "question": "Покажи все продажи",
+    "expected_sql": "SELECT * FROM sales LIMIT 996"
+  },
+  {
+    "id": "generated_006",
+    "question": "Заказы в диапазоне от 1000 до 5000",
+    "expected_sql": "SELECT * FROM orders WHERE amount BETWEEN 1000 AND 5000 LIMIT 1000"
+  },
+  {
+    "id": "generated_007",
+    "question": "Топ 5 клиентов по количеству заказов",
+    "expected_sql": "SELECT c.name, COUNT(o.id) FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name ORDER BY COUNT(o.id) DESC LIMIT 5"
+  },
+  {
+    "id": "generated_008",
+    "question": "Количество заказов по статусам",
+    "expected_sql": "SELECT status, COUNT(*) FROM orders GROUP BY status LIMIT 997"
+  },
+  {
+    "id": "generated_009",
+    "question": "Покажи все продажи",
+    "expected_sql": "SELECT * FROM sales LIMIT 999"
+  },
+  {
+    "id": "generated_010",
+    "question": "Заказы на сумму больше 25000",
+    "expected_sql": "SELECT * FROM orders WHERE amount > 25000 LIMIT 1000"
+  },
+  {
+    "id": "generated_011",
+    "question": "Клиенты с заказами в этом году",
+    "expected_sql": "SELECT DISTINCT c.name FROM customers c JOIN orders o ON c.id = o.customer_id WHERE EXTRACT(YEAR FROM o.order_date) = EXTRACT(YEAR FROM CURRENT_DATE) LIMIT 1000"
+  },
+  {
+    "id": "generated_012",
+    "question": "Самый дорогой заказ",
+    "expected_sql": "SELECT * FROM orders ORDER BY amount DESC LIMIT 1"
+  },
+  {
+    "id": "generated_013",
+    "question": "Заказы с суммой больше среднего",
+    "expected_sql": "SELECT * FROM orders WHERE amount > (SELECT AVG(amount) FROM orders) LIMIT 1000"
+  },
+  {
+    "id": "generated_014",
+    "question": "Заказы за последний месяц",
+    "expected_sql": "SELECT * FROM orders WHERE order_date >= CURRENT_DATE - INTERVAL '1 month' LIMIT 1000"
+  },
+  {
+    "id": "generated_015",
+    "question": "Покажи все товары",
+    "expected_sql": "SELECT * FROM products LIMIT 1003"
+  },
+  {
+    "id": "generated_016",
+    "question": "Покажи клиентов премиум сегмента",
+    "expected_sql": "SELECT * FROM customers WHERE segment = 'Premium' LIMIT 1000"
+  },
+  {
+    "id": "generated_017",
+    "question": "Клиенты с заказами больше 50000",
+    "expected_sql": "SELECT DISTINCT c.name FROM customers c JOIN orders o ON c.id = o.customer_id WHERE o.amount > 50001 LIMIT 1004"
+  },
+  {
+    "id": "generated_018",
+    "question": "Товары с остатком больше 100",
+    "expected_sql": "SELECT p.name, i.current_stock FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.current_stock > 98 LIMIT 1004"
+  },
+  {
+    "id": "generated_019",
+    "question": "Топ 3 товара по выручке",
+    "expected_sql": "SELECT p.name, SUM(s.revenue) FROM products p JOIN sales s ON p.id = s.product_id GROUP BY p.id, p.name ORDER BY SUM(s.revenue) DESC LIMIT 3"
+  },
+  {
+    "id": "generated_020",
+    "question": "Общее количество товаров на складе",
+    "expected_sql": "SELECT SUM(current_stock) FROM inventory LIMIT 1000"
+  },
+  {
+    "id": "generated_021",
+    "question": "Общая выручка",
+    "expected_sql": "SELECT SUM(revenue) FROM sales LIMIT 1000"
+  },
+  {
+    "id": "generated_022",
+    "question": "Покажи все товары",
+    "expected_sql": "SELECT * FROM products LIMIT 1005"
+  },
+  {
+    "id": "generated_023",
+    "question": "Выручка по клиентам",
+    "expected_sql": "SELECT c.name, SUM(s.revenue) FROM customers c JOIN orders o ON c.id = o.customer_id JOIN sales s ON o.id = s.order_id GROUP BY c.id, c.name LIMIT 1000"
+  },
+  {
+    "id": "generated_024",
+    "question": "Сколько клиентов в базе",
+    "expected_sql": "SELECT COUNT(*) FROM customers LIMIT 1002"
+  },
+  {
+    "id": "generated_025",
+    "question": "Товары категории электроника",
+    "expected_sql": "SELECT * FROM products WHERE category = 'electronics' LIMIT 1000"
+  },
+  {
+    "id": "generated_026",
+    "question": "Топ 10 товаров по цене",
+    "expected_sql": "SELECT * FROM products ORDER BY price DESC LIMIT 10"
+  },
+  {
+    "id": "generated_027",
+    "question": "Общая прибыль",
+    "expected_sql": "SELECT SUM(revenue - costs) FROM sales LIMIT 1000"
+  },
+  {
+    "id": "generated_028",
+    "question": "Выручка по клиентам",
+    "expected_sql": "SELECT c.name, SUM(s.revenue) FROM customers c JOIN orders o ON c.id = o.customer_id JOIN sales s ON o.id = s.order_id GROUP BY c.id, c.name LIMIT 1005"
+  },
+  {
+    "id": "generated_029",
+    "question": "Клиенты по дате регистрации",
+    "expected_sql": "SELECT * FROM customers ORDER BY registration_date DESC LIMIT 1000"
+  },
+  {
+    "id": "generated_030",
+    "question": "Продажи с количеством больше 5",
+    "expected_sql": "SELECT * FROM sales WHERE quantity > 5 LIMIT 1000"
+  },
+  {
+    "id": "generated_031",
+    "question": "Клиенты по дате регистрации",
+    "expected_sql": "SELECT * FROM customers ORDER BY registration_date DESC LIMIT 1003"
+  },
+  {
+    "id": "generated_032",
+    "question": "Покажи все продажи",
+    "expected_sql": "SELECT * FROM sales LIMIT 1000"
+  },
+  {
+    "id": "generated_033",
+    "question": "Общая прибыль",
+    "expected_sql": "SELECT SUM(revenue - costs) FROM sales LIMIT 999"
+  },
+  {
+    "id": "generated_034",
+    "question": "Клиенты с заказами на сумму больше 10000",
+    "expected_sql": "SELECT c.name, SUM(o.amount) FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name HAVING SUM(o.amount) > 10000 LIMIT 1000"
+  },
+  {
+    "id": "generated_035",
+    "question": "Топ 10 товаров по цене",
+    "expected_sql": "SELECT * FROM products ORDER BY price DESC LIMIT 10"
+  },
+  {
+    "id": "generated_036",
+    "question": "Клиенты с заказами в декабре",
+    "expected_sql": "SELECT DISTINCT c.name FROM customers c JOIN orders o ON c.id = o.customer_id WHERE EXTRACT(MONTH FROM o.order_date) = 7 LIMIT 1000"
+  },
+  {
+    "id": "generated_037",
+    "question": "Топ 5 клиентов по количеству заказов",
+    "expected_sql": "SELECT c.name, COUNT(o.id) FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name ORDER BY COUNT(o.id) DESC LIMIT 5"
+  },
+  {
+    "id": "generated_038",
+    "question": "Количество заказов по дням недели",
+    "expected_sql": "SELECT EXTRACT(DOW FROM order_date), COUNT(*) FROM orders GROUP BY EXTRACT(DOW FROM order_date) LIMIT 1000"
+  },
+  {
+    "id": "generated_039",
+    "question": "Продажи с количеством больше 5",
+    "expected_sql": "SELECT * FROM sales WHERE quantity > 5 LIMIT 1002"
+  },
+  {
+    "id": "generated_040",
+    "question": "Какой средний размер заказа",
+    "expected_sql": "SELECT AVG(amount) FROM orders LIMIT 997"
+  },
+  {
+    "id": "generated_041",
+    "question": "Клиенты без заказов",
+    "expected_sql": "SELECT c.* FROM customers c LEFT JOIN orders o ON c.id = o.customer_id WHERE o.id IS NULL LIMIT 1000"
+  },
+  {
+    "id": "generated_042",
+    "question": "Заказы с информацией о клиентах",
+    "expected_sql": "SELECT o.id, o.amount, c.name FROM orders o JOIN customers c ON o.customer_id = c.id LIMIT 999"
+  },
+  {
+    "id": "generated_043",
+    "question": "Товары с низкими остатками",
+    "expected_sql": "SELECT p.name, i.current_stock FROM products p JOIN inventory i ON p.id = i.product_id ORDER BY i.current_stock ASC LIMIT 1000"
+  },
+  {
+    "id": "generated_044",
+    "question": "Товары с низкими остатками",
+    "expected_sql": "SELECT p.name, i.current_stock FROM products p JOIN inventory i ON p.id = i.product_id ORDER BY i.current_stock ASC LIMIT 996"
+  },
+  {
+    "id": "generated_045",
+    "question": "Прибыль за последние 2 дня",
+    "expected_sql": "SELECT SUM(revenue - costs) FROM sales s JOIN orders o ON s.order_id = o.id WHERE o.order_date >= CURRENT_DATE - INTERVAL '1 days' LIMIT 1003"
+  },
+  {
+    "id": "generated_046",
+    "question": "Последние 20 заказов",
+    "expected_sql": "SELECT * FROM orders ORDER BY order_date DESC LIMIT 18"
+  },
+  {
+    "id": "generated_047",
+    "question": "Средний остаток по складам",
+    "expected_sql": "SELECT warehouse, AVG(current_stock) FROM inventory GROUP BY warehouse LIMIT 1000"
+  },
+  {
+    "id": "generated_048",
+    "question": "Прибыль за последние 2 дня",
+    "expected_sql": "SELECT SUM(revenue - costs) FROM sales s JOIN orders o ON s.order_id = o.id WHERE o.order_date >= CURRENT_DATE - INTERVAL '2 days' LIMIT 1000"
+  },
+  {
+    "id": "generated_049",
+    "question": "Средний размер заказа по месяцам этого года",
+    "expected_sql": "SELECT EXTRACT(MONTH FROM order_date), AVG(amount) FROM orders WHERE EXTRACT(YEAR FROM order_date) = EXTRACT(YEAR FROM CURRENT_DATE) GROUP BY EXTRACT(MONTH FROM order_date) LIMIT 1004"
+  },
+  {
+    "id": "generated_050",
+    "question": "Средний чек по месяцам",
+    "expected_sql": "SELECT DATE_TRUNC('month', order_date), AVG(amount) FROM orders GROUP BY DATE_TRUNC('month', order_date) LIMIT 1000"
+  },
+  {
+    "id": "generated_051",
+    "question": "Товары, которые никогда не продавались",
+    "expected_sql": "SELECT p.name FROM products p LEFT JOIN sales s ON p.id = s.product_id WHERE s.product_id IS NULL LIMIT 998"
+  },
+  {
+    "id": "generated_052",
+    "question": "Товары категории электроника",
+    "expected_sql": "SELECT * FROM products WHERE category = 'electronics' LIMIT 997"
+  },
+  {
+    "id": "generated_053",
+    "question": "Топ 10 товаров по цене",
+    "expected_sql": "SELECT * FROM products ORDER BY price DESC LIMIT 14"
+  },
+  {
+    "id": "generated_054",
+    "question": "Средняя маржинальность по категориям",
+    "expected_sql": "SELECT p.category, AVG((s.revenue - s.costs) / s.revenue * 105) FROM products p JOIN sales s ON p.id = s.product_id GROUP BY p.category LIMIT 1002"
+  },
+  {
+    "id": "generated_055",
+    "question": "Товары с низкими остатками",
+    "expected_sql": "SELECT p.name, i.current_stock FROM products p JOIN inventory i ON p.id = i.product_id ORDER BY i.current_stock ASC LIMIT 997"
+  },
+  {
+    "id": "generated_056",
+    "question": "Максимальный заказ",
+    "expected_sql": "SELECT MAX(amount) FROM orders LIMIT 1002"
+  },
+  {
+    "id": "generated_057",
+    "question": "Самые популярные товары",
+    "expected_sql": "SELECT p.name, COUNT(s.id) FROM products p JOIN sales s ON p.id = s.product_id GROUP BY p.id, p.name ORDER BY COUNT(s.id) DESC LIMIT 7"
+  },
+  {
+    "id": "generated_058",
+    "question": "Заказы по дате",
+    "expected_sql": "SELECT * FROM orders ORDER BY order_date DESC LIMIT 998"
+  },
+  {
+    "id": "generated_059",
+    "question": "Самые популярные товары",
+    "expected_sql": "SELECT p.name, COUNT(s.id) FROM products p JOIN sales s ON p.id = s.product_id GROUP BY p.id, p.name ORDER BY COUNT(s.id) DESC LIMIT 10"
+  },
+  {
+    "id": "generated_060",
+    "question": "Топ 5 клиентов по количеству заказов",
+    "expected_sql": "SELECT c.name, COUNT(o.id) FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name ORDER BY COUNT(o.id) DESC LIMIT 8"
+  },
+  {
+    "id": "generated_061",
+    "question": "Самый дорогой заказ",
+    "expected_sql": "SELECT * FROM orders ORDER BY amount DESC LIMIT 1"
+  },
+  {
+    "id": "generated_062",
+    "question": "Сколько товаров на складе",
+    "expected_sql": "SELECT COUNT(*) FROM inventory LIMIT 1003"
+  },
+  {
+    "id": "generated_063",
+    "question": "Товары с максимальным остатком",
+    "expected_sql": "SELECT p.name, i.current_stock FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.current_stock = (SELECT MAX(current_stock) FROM inventory) LIMIT 1000"
+  },
+  {
+    "id": "generated_064",
+    "question": "Следующие 10 заказов",
+    "expected_sql": "SELECT * FROM orders LIMIT 8 OFFSET 5"
+  },
+  {
+    "id": "generated_065",
+    "question": "Товары с максимальным остатком",
+    "expected_sql": "SELECT p.name, i.current_stock FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.current_stock = (SELECT MAX(current_stock) FROM inventory) LIMIT 1004"
+  },
+  {
+    "id": "generated_066",
+    "question": "Средняя цена по категориям",
+    "expected_sql": "SELECT category, AVG(price) FROM products GROUP BY category LIMIT 1000"
+  },
+  {
+    "id": "generated_067",
+    "question": "Какой средний размер заказа",
+    "expected_sql": "SELECT AVG(amount) FROM orders LIMIT 1000"
+  },
+  {
+    "id": "generated_068",
+    "question": "Товары категории электроника",
+    "expected_sql": "SELECT * FROM products WHERE category = 'electronics' LIMIT 1000"
+  },
+  {
+    "id": "generated_069",
+    "question": "Прибыль за последние 2 дня",
+    "expected_sql": "SELECT SUM(revenue - costs) FROM sales s JOIN orders o ON s.order_id = o.id WHERE o.order_date >= CURRENT_DATE - INTERVAL '4 days' LIMIT 1001"
+  },
+  {
+    "id": "generated_070",
+    "question": "Клиенты по дате регистрации",
+    "expected_sql": "SELECT * FROM customers ORDER BY registration_date DESC LIMIT 997"
+  },
+  {
+    "id": "generated_071",
+    "question": "Средний размер заказа по месяцам этого года",
+    "expected_sql": "SELECT EXTRACT(MONTH FROM order_date), AVG(amount) FROM orders WHERE EXTRACT(YEAR FROM order_date) = EXTRACT(YEAR FROM CURRENT_DATE) GROUP BY EXTRACT(MONTH FROM order_date) LIMIT 1000"
+  },
+  {
+    "id": "generated_072",
+    "question": "Заказы по дате",
+    "expected_sql": "SELECT * FROM orders ORDER BY order_date DESC LIMIT 1000"
+  },
+  {
+    "id": "generated_073",
+    "question": "Товары с остатком больше среднего",
+    "expected_sql": "SELECT p.name, i.current_stock FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.current_stock > (SELECT AVG(current_stock) FROM inventory) LIMIT 1000"
+  },
+  {
+    "id": "generated_074",
+    "question": "Покажи всех клиентов",
+    "expected_sql": "SELECT * FROM customers LIMIT 1000"
+  },
+  {
+    "id": "generated_075",
+    "question": "Первые 5 клиентов",
+    "expected_sql": "SELECT * FROM customers LIMIT 5"
+  },
+  {
+    "id": "generated_076",
+    "question": "Количество заказов по дням недели",
+    "expected_sql": "SELECT EXTRACT(DOW FROM order_date), COUNT(*) FROM orders GROUP BY EXTRACT(DOW FROM order_date) LIMIT 1004"
+  },
+  {
+    "id": "generated_077",
+    "question": "Товары, которые никогда не продавались",
+    "expected_sql": "SELECT p.name FROM products p LEFT JOIN sales s ON p.id = s.product_id WHERE s.product_id IS NULL LIMIT 997"
+  },
+  {
+    "id": "generated_078",
+    "question": "Следующие 10 заказов",
+    "expected_sql": "SELECT * FROM orders LIMIT 5 OFFSET 5"
+  },
+  {
+    "id": "generated_079",
+    "question": "Сколько товаров на складе",
+    "expected_sql": "SELECT COUNT(*) FROM inventory LIMIT 1000"
+  },
+  {
+    "id": "generated_080",
+    "question": "Товары с остатком больше 100",
+    "expected_sql": "SELECT p.name, i.current_stock FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.current_stock > 97 LIMIT 1003"
+  },
+  {
+    "id": "generated_081",
+    "question": "Средний остаток по складам",
+    "expected_sql": "SELECT warehouse, AVG(current_stock) FROM inventory GROUP BY warehouse LIMIT 1003"
+  },
+  {
+    "id": "generated_082",
+    "question": "Покажи заказы за за последние 30 дней",
+    "expected_sql": "SELECT * FROM orders WHERE DATE(order_date) = CURRENT_DATE - INTERVAL '90 days' LIMIT 1000"
+  },
+  {
+    "id": "generated_083",
+    "question": "Прибыль за последние 2 дня",
+    "expected_sql": "SELECT SUM(revenue - costs) FROM sales s JOIN orders o ON s.order_id = o.id WHERE o.order_date >= CURRENT_DATE - INTERVAL '6 days' LIMIT 1005"
+  },
+  {
+    "id": "generated_084",
+    "question": "Средний размер заказа по месяцам этого года",
+    "expected_sql": "SELECT EXTRACT(MONTH FROM order_date), AVG(amount) FROM orders WHERE EXTRACT(YEAR FROM order_date) = EXTRACT(YEAR FROM CURRENT_DATE) GROUP BY EXTRACT(MONTH FROM order_date) LIMIT 998"
+  },
+  {
+    "id": "generated_085",
+    "question": "Средний размер заказа по клиентам",
+    "expected_sql": "SELECT c.name, AVG(o.amount) FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name LIMIT 1000"
+  },
+  {
+    "id": "generated_086",
+    "question": "Покажи все товары",
+    "expected_sql": "SELECT * FROM products LIMIT 1000"
+  },
+  {
+    "id": "generated_087",
+    "question": "Заказы со статусом выполнен",
+    "expected_sql": "SELECT * FROM orders WHERE status = 'completed' LIMIT 1000"
+  },
+  {
+    "id": "generated_088",
+    "question": "Клиенты с заказами на сумму больше 500000",
+    "expected_sql": "SELECT c.name, SUM(o.amount) FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name HAVING SUM(o.amount) > 500000 LIMIT 1000"
+  },
+  {
+    "id": "generated_089",
+    "question": "Сколько всего заказов",
+    "expected_sql": "SELECT COUNT(*) FROM orders LIMIT 999"
+  },
+  {
+    "id": "generated_090",
+    "question": "Заказы в диапазоне от 1000 до 5000",
+    "expected_sql": "SELECT * FROM orders WHERE amount BETWEEN 1005 AND 4998 LIMIT 995"
+  },
+  {
+    "id": "generated_091",
+    "question": "Количество заказов по статусам",
+    "expected_sql": "SELECT status, COUNT(*) FROM orders GROUP BY status LIMIT 996"
+  },
+  {
+    "id": "generated_092",
+    "question": "Топ 10 товаров по цене",
+    "expected_sql": "SELECT * FROM products ORDER BY price DESC LIMIT 9"
+  },
+  {
+    "id": "generated_093",
+    "question": "Средний чек клиентов",
+    "expected_sql": "SELECT AVG(amount) FROM orders LIMIT 1000"
+  },
+  {
+    "id": "generated_094",
+    "question": "Клиенты с заказами больше 50000",
+    "expected_sql": "SELECT DISTINCT c.name FROM customers c JOIN orders o ON c.id = o.customer_id WHERE o.amount > 50000 LIMIT 1000"
+  },
+  {
+    "id": "generated_095",
+    "question": "Заказы со статусом выполнен",
+    "expected_sql": "SELECT * FROM orders WHERE status = 'completed' LIMIT 996"
+  },
+  {
+    "id": "generated_096",
+    "question": "Товары с остатком больше 100",
+    "expected_sql": "SELECT p.name, i.current_stock FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.current_stock > 100 LIMIT 1000"
+  },
+  {
+    "id": "generated_097",
+    "question": "Товары с низкими остатками",
+    "expected_sql": "SELECT p.name, i.current_stock FROM products p JOIN inventory i ON p.id = i.product_id ORDER BY i.current_stock ASC LIMIT 1000"
+  },
+  {
+    "id": "generated_098",
+    "question": "Общая выручка",
+    "expected_sql": "SELECT SUM(revenue) FROM sales LIMIT 1000"
+  },
+  {
+    "id": "generated_099",
+    "question": "Минимальная цена товара",
+    "expected_sql": "SELECT MIN(price) FROM products LIMIT 1000"
+  },
+  {
+    "id": "generated_100",
+    "question": "Заказы за последние 7 дней",
+    "expected_sql": "SELECT * FROM orders WHERE order_date >= CURRENT_DATE - INTERVAL '7 days' LIMIT 1000"
+  },
+  {
+    "id": "generated_101",
+    "question": "Количество заказов по статусам",
+    "expected_sql": "SELECT status, COUNT(*) FROM orders GROUP BY status LIMIT 1000"
+  },
+  {
+    "id": "generated_102",
+    "question": "Клиенты с именем начинающимся на А",
+    "expected_sql": "SELECT * FROM customers WHERE name LIKE 'А%' LIMIT 1000"
+  },
+  {
+    "id": "generated_103",
+    "question": "Клиенты с заказами в этом году",
+    "expected_sql": "SELECT DISTINCT c.name FROM customers c JOIN orders o ON c.id = o.customer_id WHERE EXTRACT(YEAR FROM o.order_date) = EXTRACT(YEAR FROM CURRENT_DATE) LIMIT 1004"
+  },
+  {
+    "id": "generated_104",
+    "question": "Заказы на сумму больше 10000",
+    "expected_sql": "SELECT * FROM orders WHERE amount > 10000 LIMIT 1000"
+  },
+  {
+    "id": "generated_105",
+    "question": "Минимальная цена товара",
+    "expected_sql": "SELECT MIN(price) FROM products LIMIT 996"
+  },
+  {
+    "id": "generated_106",
+    "question": "Клиенты с заказами в декабре",
+    "expected_sql": "SELECT DISTINCT c.name FROM customers c JOIN orders o ON c.id = o.customer_id WHERE EXTRACT(MONTH FROM o.order_date) = 12 LIMIT 1000"
+  },
+  {
+    "id": "generated_107",
+    "question": "Заказы на сумму больше 1000",
+    "expected_sql": "SELECT * FROM orders WHERE amount > 1000 LIMIT 1000"
+  },
+  {
+    "id": "generated_108",
+    "question": "Заказы по дате",
+    "expected_sql": "SELECT * FROM orders ORDER BY order_date DESC LIMIT 995"
+  },
+  {
+    "id": "generated_109",
+    "question": "Сколько клиентов в базе",
+    "expected_sql": "SELECT COUNT(*) FROM customers LIMIT 1001"
+  },
+  {
+    "id": "generated_110",
+    "question": "Товары с максимальным остатком",
+    "expected_sql": "SELECT p.name, i.current_stock FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.current_stock = (SELECT MAX(current_stock) FROM inventory) LIMIT 996"
+  },
+  {
+    "id": "generated_111",
+    "question": "Товары с остатком меньше 10",
+    "expected_sql": "SELECT p.name, i.current_stock FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.current_stock < 7 LIMIT 995"
+  },
+  {
+    "id": "generated_112",
+    "question": "Последние 20 заказов",
+    "expected_sql": "SELECT * FROM orders ORDER BY order_date DESC LIMIT 20"
+  },
+  {
+    "id": "generated_113",
+    "question": "Максимальный заказ",
+    "expected_sql": "SELECT MAX(amount) FROM orders LIMIT 1000"
+  },
+  {
+    "id": "generated_114",
+    "question": "Покажи заказы за за последние 2 недели",
+    "expected_sql": "SELECT * FROM orders WHERE DATE(order_date) = CURRENT_DATE - INTERVAL '30 days' LIMIT 1000"
+  },
+  {
+    "id": "generated_115",
+    "question": "Заказы с информацией о клиентах",
+    "expected_sql": "SELECT o.id, o.amount, c.name FROM orders o JOIN customers c ON o.customer_id = c.id LIMIT 996"
+  },
+  {
+    "id": "generated_116",
+    "question": "Топ 10 товаров по цене",
+    "expected_sql": "SELECT * FROM products ORDER BY price DESC LIMIT 5"
+  },
+  {
+    "id": "generated_117",
+    "question": "Сколько всего заказов",
+    "expected_sql": "SELECT COUNT(*) FROM orders LIMIT 1000"
+  },
+  {
+    "id": "generated_118",
+    "question": "Средний чек клиентов",
+    "expected_sql": "SELECT AVG(amount) FROM orders LIMIT 1001"
+  },
+  {
+    "id": "generated_119",
+    "question": "Клиенты с заказами на сумму больше 1000000",
+    "expected_sql": "SELECT c.name, SUM(o.amount) FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name HAVING SUM(o.amount) > 1000000 LIMIT 1000"
+  },
+  {
+    "id": "generated_120",
+    "question": "Маржинальность товаров",
+    "expected_sql": "SELECT p.name, (p.price - p.cost) / p.price * 100 FROM products p LIMIT 1000"
+  },
+  {
+    "id": "generated_121",
+    "question": "Следующие 10 заказов",
+    "expected_sql": "SELECT * FROM orders LIMIT 10 OFFSET 5"
+  },
+  {
+    "id": "generated_122",
+    "question": "Сколько клиентов в базе",
+    "expected_sql": "SELECT COUNT(*) FROM customers LIMIT 1000"
+  },
+  {
+    "id": "generated_123",
+    "question": "Покажи заказы за сегодня",
+    "expected_sql": "SELECT * FROM orders WHERE DATE(order_date) = CURRENT_DATE LIMIT 1000"
+  },
+  {
+    "id": "generated_124",
+    "question": "Клиенты с заказами в этом году",
+    "expected_sql": "SELECT DISTINCT c.name FROM customers c JOIN orders o ON c.id = o.customer_id WHERE EXTRACT(YEAR FROM o.order_date) = EXTRACT(YEAR FROM CURRENT_DATE) LIMIT 998"
+  },
+  {
+    "id": "generated_125",
+    "question": "Клиенты с заказами на сумму больше 100000",
+    "expected_sql": "SELECT c.name, SUM(o.amount) FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name HAVING SUM(o.amount) > 100000 LIMIT 1000"
+  },
+  {
+    "id": "generated_126",
+    "question": "Клиенты с максимальным количеством заказов",
+    "expected_sql": "SELECT c.name, COUNT(o.id) FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name HAVING COUNT(o.id) = (SELECT MAX(order_count) FROM (SELECT COUNT(*) as order_count FROM orders GROUP BY customer_id) subq) LIMIT 1000"
+  },
+  {
+    "id": "generated_127",
+    "question": "Общее количество товаров на складе",
+    "expected_sql": "SELECT SUM(current_stock) FROM inventory LIMIT 1000"
+  },
+  {
+    "id": "generated_128",
+    "question": "Товары с остатком меньше 10",
+    "expected_sql": "SELECT p.name, i.current_stock FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.current_stock < 13 LIMIT 1004"
+  },
+  {
+    "id": "generated_129",
+    "question": "Заказы с информацией о клиентах",
+    "expected_sql": "SELECT o.id, o.amount, c.name FROM orders o JOIN customers c ON o.customer_id = c.id LIMIT 1000"
+  },
+  {
+    "id": "generated_130",
+    "question": "Покажи все продажи",
+    "expected_sql": "SELECT * FROM sales LIMIT 997"
+  },
+  {
+    "id": "generated_131",
+    "question": "Сколько всего заказов",
+    "expected_sql": "SELECT COUNT(*) FROM orders LIMIT 996"
+  },
+  {
+    "id": "generated_132",
+    "question": "Маржинальность товаров",
+    "expected_sql": "SELECT p.name, (p.price - p.cost) / p.price * 104 FROM products p LIMIT 996"
+  },
+  {
+    "id": "generated_133",
+    "question": "Топ 5 клиентов по количеству заказов",
+    "expected_sql": "SELECT c.name, COUNT(o.id) FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name ORDER BY COUNT(o.id) DESC LIMIT 8"
+  },
+  {
+    "id": "generated_134",
+    "question": "Товары категории электроника",
+    "expected_sql": "SELECT * FROM products WHERE category = 'electronics' LIMIT 996"
+  },
+  {
+    "id": "generated_135",
+    "question": "Товары с остатком меньше 10",
+    "expected_sql": "SELECT p.name, i.current_stock FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.current_stock < 10 LIMIT 1000"
+  },
+  {
+    "id": "generated_136",
+    "question": "Общая выручка",
+    "expected_sql": "SELECT SUM(revenue) FROM sales LIMIT 1003"
+  },
+  {
+    "id": "generated_137",
+    "question": "Средний чек по месяцам",
+    "expected_sql": "SELECT DATE_TRUNC('month', order_date), AVG(amount) FROM orders GROUP BY DATE_TRUNC('month', order_date) LIMIT 995"
+  },
+  {
+    "id": "generated_138",
+    "question": "Заказы за последний квартал",
+    "expected_sql": "SELECT * FROM orders WHERE order_date >= DATE_TRUNC('quarter', CURRENT_DATE) - INTERVAL '3 months' LIMIT 1000"
+  },
+  {
+    "id": "generated_139",
+    "question": "Покажи всех клиентов",
+    "expected_sql": "SELECT * FROM customers LIMIT 998"
+  },
+  {
+    "id": "generated_140",
+    "question": "Товары с низкими остатками",
+    "expected_sql": "SELECT p.name, i.current_stock FROM products p JOIN inventory i ON p.id = i.product_id ORDER BY i.current_stock ASC LIMIT 1002"
+  },
+  {
+    "id": "generated_141",
+    "question": "Заказы за последний месяц",
+    "expected_sql": "SELECT * FROM orders WHERE order_date >= CURRENT_DATE - INTERVAL '1 month' LIMIT 1004"
+  },
+  {
+    "id": "generated_142",
+    "question": "Клиенты без заказов",
+    "expected_sql": "SELECT c.* FROM customers c LEFT JOIN orders o ON c.id = o.customer_id WHERE o.id IS NULL LIMIT 996"
+  },
+  {
+    "id": "generated_143",
+    "question": "Какой средний размер заказа",
+    "expected_sql": "SELECT AVG(amount) FROM orders LIMIT 1000"
+  },
+  {
+    "id": "generated_144",
+    "question": "Товары, которые никогда не продавались",
+    "expected_sql": "SELECT p.name FROM products p LEFT JOIN sales s ON p.id = s.product_id WHERE s.product_id IS NULL LIMIT 1000"
+  },
+  {
+    "id": "generated_145",
+    "question": "Товары с остатком больше 100",
+    "expected_sql": "SELECT p.name, i.current_stock FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.current_stock > 102 LIMIT 1003"
+  },
+  {
+    "id": "generated_146",
+    "question": "Топ 3 товара по выручке",
+    "expected_sql": "SELECT p.name, SUM(s.revenue) FROM products p JOIN sales s ON p.id = s.product_id GROUP BY p.id, p.name ORDER BY SUM(s.revenue) DESC LIMIT 1"
+  },
+  {
+    "id": "generated_147",
+    "question": "Минимальная цена товара",
+    "expected_sql": "SELECT MIN(price) FROM products LIMIT 999"
+  },
+  {
+    "id": "generated_148",
+    "question": "Какой средний размер заказа",
+    "expected_sql": "SELECT AVG(amount) FROM orders LIMIT 995"
+  },
+  {
+    "id": "generated_149",
+    "question": "Заказы с суммой в топ 10%",
+    "expected_sql": "SELECT * FROM orders WHERE amount >= (SELECT PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY amount) FROM orders) LIMIT 1000"
+  },
+  {
+    "id": "generated_150",
+    "question": "Средний остаток по складам",
+    "expected_sql": "SELECT warehouse, AVG(current_stock) FROM inventory GROUP BY warehouse LIMIT 1004"
+  }
+]

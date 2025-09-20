@@ -1,0 +1,252 @@
+[
+  {
+    "id": "test_051",
+    "question": "Покажи топ 3 клиента по выручке с использованием оконной функции",
+    "expected_sql": "SELECT name, total_revenue, ROW_NUMBER() OVER (ORDER BY total_revenue DESC) as rank FROM (SELECT c.name, SUM(o.amount) as total_revenue FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name) subq ORDER BY total_revenue DESC LIMIT 3"
+  },
+  {
+    "id": "test_052",
+    "question": "Найди клиентов, которые делали заказы в каждом месяце этого года",
+    "expected_sql": "SELECT c.name FROM customers c WHERE NOT EXISTS (SELECT 1 FROM generate_series(1, 12) as month WHERE NOT EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.id AND EXTRACT(MONTH FROM o.order_date) = month AND EXTRACT(YEAR FROM o.order_date) = EXTRACT(YEAR FROM CURRENT_DATE)))"
+  },
+  {
+    "id": "test_053",
+    "question": "Покажи разницу между текущим и предыдущим заказом для каждого клиента",
+    "expected_sql": "SELECT c.name, o.order_date, o.amount, LAG(o.amount) OVER (PARTITION BY c.id ORDER BY o.order_date) as prev_amount, o.amount - LAG(o.amount) OVER (PARTITION BY c.id ORDER BY o.order_date) as difference FROM customers c JOIN orders o ON c.id = o.customer_id ORDER BY c.name, o.order_date"
+  },
+  {
+    "id": "test_054",
+    "question": "Найди товары с максимальной прибылью в каждой категории",
+    "expected_sql": "SELECT p.name, p.category, p.price - p.cost as profit FROM products p WHERE p.price - p.cost = (SELECT MAX(price - cost) FROM products p2 WHERE p2.category = p.category)"
+  },
+  {
+    "id": "test_055",
+    "question": "Покажи клиентов с растущим трендом заказов по месяцам",
+    "expected_sql": "WITH monthly_orders AS (SELECT c.id, c.name, EXTRACT(MONTH FROM o.order_date) as month, COUNT(*) as order_count FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name, EXTRACT(MONTH FROM o.order_date)) SELECT DISTINCT name FROM monthly_orders mo1 WHERE order_count > (SELECT order_count FROM monthly_orders mo2 WHERE mo2.id = mo1.id AND mo2.month = mo1.month - 1)"
+  },
+  {
+    "id": "test_056",
+    "question": "Найди товары, которые заказывались только один раз",
+    "expected_sql": "SELECT p.name FROM products p JOIN sales s ON p.id = s.product_id GROUP BY p.id, p.name HAVING COUNT(*) = 1"
+  },
+  {
+    "id": "test_057",
+    "question": "Покажи средний размер заказа по сегментам клиентов",
+    "expected_sql": "SELECT c.segment, AVG(o.amount) as avg_order_amount FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.segment ORDER BY avg_order_amount DESC"
+  },
+  {
+    "id": "test_058",
+    "question": "Найди клиентов, которые заказывали товары из всех категорий",
+    "expected_sql": "SELECT c.name FROM customers c WHERE (SELECT COUNT(DISTINCT p.category) FROM products p JOIN sales s ON p.id = s.product_id JOIN orders o ON s.order_id = o.id WHERE o.customer_id = c.id) = (SELECT COUNT(DISTINCT category) FROM products)"
+  },
+  {
+    "id": "test_059",
+    "question": "Покажи товары с нулевой прибылью",
+    "expected_sql": "SELECT name, price, cost FROM products WHERE price = cost"
+  },
+  {
+    "id": "test_060",
+    "question": "Найди заказы с количеством товаров больше среднего",
+    "expected_sql": "SELECT o.id, o.amount, COUNT(s.id) as item_count FROM orders o JOIN sales s ON o.id = s.order_id GROUP BY o.id, o.amount HAVING COUNT(s.id) > (SELECT AVG(item_count) FROM (SELECT COUNT(*) as item_count FROM sales GROUP BY order_id) subq)"
+  },
+  {
+    "id": "test_061",
+    "question": "Покажи клиентов с максимальным количеством заказов в каждом месяце",
+    "expected_sql": "WITH monthly_customers AS (SELECT c.name, EXTRACT(MONTH FROM o.order_date) as month, COUNT(*) as order_count FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name, EXTRACT(MONTH FROM o.order_date)) SELECT name, month, order_count FROM monthly_customers mc1 WHERE order_count = (SELECT MAX(order_count) FROM monthly_customers mc2 WHERE mc2.month = mc1.month)"
+  },
+  {
+    "id": "test_062",
+    "question": "Найди товары, которые никогда не продавались",
+    "expected_sql": "SELECT p.name FROM products p LEFT JOIN sales s ON p.id = s.product_id WHERE s.product_id IS NULL"
+  },
+  {
+    "id": "test_063",
+    "question": "Покажи динамику продаж по неделям",
+    "expected_sql": "SELECT DATE_TRUNC('week', order_date) as week, COUNT(*) as orders_count, SUM(amount) as total_revenue FROM orders GROUP BY DATE_TRUNC('week', order_date) ORDER BY week"
+  },
+  {
+    "id": "test_064",
+    "question": "Найди клиентов с заказами на сумму больше 50000 в этом году",
+    "expected_sql": "SELECT c.name, SUM(o.amount) as total_amount FROM customers c JOIN orders o ON c.id = o.customer_id WHERE EXTRACT(YEAR FROM o.order_date) = EXTRACT(YEAR FROM CURRENT_DATE) GROUP BY c.id, c.name HAVING SUM(o.amount) > 50000 ORDER BY total_amount DESC"
+  },
+  {
+    "id": "test_065",
+    "question": "Покажи товары с остатком меньше 5% от максимального остатка",
+    "expected_sql": "SELECT p.name, i.current_stock FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.current_stock < (SELECT MAX(current_stock) * 0.05 FROM inventory)"
+  },
+  {
+    "id": "test_066",
+    "question": "Найди заказы с товарами из разных категорий",
+    "expected_sql": "SELECT o.id, COUNT(DISTINCT p.category) as categories_count FROM orders o JOIN sales s ON o.id = s.order_id JOIN products p ON s.product_id = p.id GROUP BY o.id HAVING COUNT(DISTINCT p.category) > 1"
+  },
+  {
+    "id": "test_067",
+    "question": "Покажи клиентов с заказами в выходные дни",
+    "expected_sql": "SELECT DISTINCT c.name FROM customers c JOIN orders o ON c.id = o.customer_id WHERE EXTRACT(DOW FROM o.order_date) IN (0, 6)"
+  },
+  {
+    "id": "test_068",
+    "question": "Найди товары с максимальной выручкой в каждой категории",
+    "expected_sql": "SELECT p.name, p.category, SUM(s.revenue) as total_revenue FROM products p JOIN sales s ON p.id = s.product_id GROUP BY p.id, p.name, p.category HAVING SUM(s.revenue) = (SELECT MAX(total_revenue) FROM (SELECT SUM(s2.revenue) as total_revenue FROM products p2 JOIN sales s2 ON p2.id = s2.product_id WHERE p2.category = p.category GROUP BY p2.id) subq)"
+  },
+  {
+    "id": "test_069",
+    "question": "Покажи средний чек по дням недели с названиями дней",
+    "expected_sql": "SELECT CASE EXTRACT(DOW FROM order_date) WHEN 0 THEN 'Воскресенье' WHEN 1 THEN 'Понедельник' WHEN 2 THEN 'Вторник' WHEN 3 THEN 'Среда' WHEN 4 THEN 'Четверг' WHEN 5 THEN 'Пятница' WHEN 6 THEN 'Суббота' END as day_name, AVG(amount) as avg_amount FROM orders GROUP BY EXTRACT(DOW FROM order_date) ORDER BY EXTRACT(DOW FROM order_date)"
+  },
+  {
+    "id": "test_070",
+    "question": "Найди клиентов с заказами в каждый день недели",
+    "expected_sql": "SELECT c.name FROM customers c WHERE (SELECT COUNT(DISTINCT EXTRACT(DOW FROM o.order_date)) FROM orders o WHERE o.customer_id = c.id) = 7"
+  },
+  {
+    "id": "test_071",
+    "question": "Покажи товары с остатком больше среднего по складу",
+    "expected_sql": "SELECT p.name, i.warehouse, i.current_stock FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.current_stock > (SELECT AVG(current_stock) FROM inventory i2 WHERE i2.warehouse = i.warehouse) ORDER BY i.warehouse, i.current_stock DESC"
+  },
+  {
+    "id": "test_072",
+    "question": "Найди заказы с товарами только из одной категории",
+    "expected_sql": "SELECT o.id, p.category, COUNT(*) as items_count FROM orders o JOIN sales s ON o.id = s.order_id JOIN products p ON s.product_id = p.id GROUP BY o.id, p.category HAVING COUNT(DISTINCT p.category) = 1"
+  },
+  {
+    "id": "test_073",
+    "question": "Покажи клиентов с максимальным количеством заказов в каждом квартале",
+    "expected_sql": "WITH quarterly_customers AS (SELECT c.name, EXTRACT(QUARTER FROM o.order_date) as quarter, COUNT(*) as order_count FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name, EXTRACT(QUARTER FROM o.order_date)) SELECT name, quarter, order_count FROM quarterly_customers qc1 WHERE order_count = (SELECT MAX(order_count) FROM quarterly_customers qc2 WHERE qc2.quarter = qc1.quarter)"
+  },
+  {
+    "id": "test_074",
+    "question": "Найди товары с прибылью больше 1000 рублей",
+    "expected_sql": "SELECT name, price, cost, price - cost as profit FROM products WHERE price - cost > 1000 ORDER BY profit DESC"
+  },
+  {
+    "id": "test_075",
+    "question": "Покажи динамику заказов по часам в рабочие дни",
+    "expected_sql": "SELECT EXTRACT(HOUR FROM order_date) as hour, COUNT(*) as orders_count FROM orders WHERE EXTRACT(DOW FROM order_date) BETWEEN 1 AND 5 GROUP BY EXTRACT(HOUR FROM order_date) ORDER BY hour"
+  },
+  {
+    "id": "test_076",
+    "question": "Найди клиентов с заказами в каждый месяц последнего года",
+    "expected_sql": "SELECT c.name FROM customers c WHERE (SELECT COUNT(DISTINCT EXTRACT(MONTH FROM o.order_date)) FROM orders o WHERE o.customer_id = c.id AND o.order_date >= CURRENT_DATE - INTERVAL '1 year') = 12"
+  },
+  {
+    "id": "test_077",
+    "question": "Покажи товары с максимальным остатком на каждом складе",
+    "expected_sql": "SELECT p.name, i.warehouse, i.current_stock FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.current_stock = (SELECT MAX(current_stock) FROM inventory i2 WHERE i2.warehouse = i.warehouse) ORDER BY i.warehouse, i.current_stock DESC"
+  },
+  {
+    "id": "test_078",
+    "question": "Найди заказы с товарами из всех доступных категорий",
+    "expected_sql": "SELECT o.id FROM orders o WHERE (SELECT COUNT(DISTINCT p.category) FROM sales s JOIN products p ON s.product_id = p.id WHERE s.order_id = o.id) = (SELECT COUNT(DISTINCT category) FROM products)"
+  },
+  {
+    "id": "test_079",
+    "question": "Покажи клиентов с растущей выручкой по месяцам",
+    "expected_sql": "WITH monthly_revenue AS (SELECT c.id, c.name, EXTRACT(MONTH FROM o.order_date) as month, SUM(o.amount) as revenue FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name, EXTRACT(MONTH FROM o.order_date)) SELECT DISTINCT name FROM monthly_revenue mr1 WHERE revenue > (SELECT revenue FROM monthly_revenue mr2 WHERE mr2.id = mr1.id AND mr2.month = mr1.month - 1)"
+  },
+  {
+    "id": "test_080",
+    "question": "Найди товары, которые заказывались в каждом месяце",
+    "expected_sql": "SELECT p.name FROM products p WHERE (SELECT COUNT(DISTINCT EXTRACT(MONTH FROM o.order_date)) FROM sales s JOIN orders o ON s.order_id = o.id WHERE s.product_id = p.id) = 12"
+  },
+  {
+    "id": "test_081",
+    "question": "Покажи средний размер заказа по статусам с процентом от общего",
+    "expected_sql": "SELECT status, AVG(amount) as avg_amount, COUNT(*) as order_count, ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM orders), 2) as percentage FROM orders GROUP BY status ORDER BY avg_amount DESC"
+  },
+  {
+    "id": "test_082",
+    "question": "Найди клиентов с заказами в каждый день месяца",
+    "expected_sql": "SELECT c.name FROM customers c WHERE (SELECT COUNT(DISTINCT EXTRACT(DAY FROM o.order_date)) FROM orders o WHERE o.customer_id = c.id AND EXTRACT(MONTH FROM o.order_date) = EXTRACT(MONTH FROM CURRENT_DATE)) = EXTRACT(DAY FROM DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month' - INTERVAL '1 day')"
+  },
+  {
+    "id": "test_083",
+    "question": "Покажи товары с остатком меньше 10% от максимального в категории",
+    "expected_sql": "SELECT p.name, p.category, i.current_stock FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.current_stock < (SELECT MAX(i2.current_stock) * 0.1 FROM inventory i2 JOIN products p2 ON i2.product_id = p2.id WHERE p2.category = p.category)"
+  },
+  {
+    "id": "test_084",
+    "question": "Найди заказы с товарами из разных складов",
+    "expected_sql": "SELECT o.id, COUNT(DISTINCT i.warehouse) as warehouses_count FROM orders o JOIN sales s ON o.id = s.order_id JOIN inventory i ON s.product_id = i.product_id GROUP BY o.id HAVING COUNT(DISTINCT i.warehouse) > 1"
+  },
+  {
+    "id": "test_085",
+    "question": "Покажи клиентов с максимальным количеством заказов в каждом дне недели",
+    "expected_sql": "WITH daily_customers AS (SELECT c.name, EXTRACT(DOW FROM o.order_date) as day_of_week, COUNT(*) as order_count FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name, EXTRACT(DOW FROM o.order_date)) SELECT name, day_of_week, order_count FROM daily_customers dc1 WHERE order_count = (SELECT MAX(order_count) FROM daily_customers dc2 WHERE dc2.day_of_week = dc1.day_of_week)"
+  },
+  {
+    "id": "test_086",
+    "question": "Найди товары с прибылью больше средней по категории",
+    "expected_sql": "SELECT p.name, p.category, p.price - p.cost as profit FROM products p WHERE p.price - p.cost > (SELECT AVG(p2.price - p2.cost) FROM products p2 WHERE p2.category = p.category) ORDER BY profit DESC"
+  },
+  {
+    "id": "test_087",
+    "question": "Покажи динамику заказов по дням с трендом",
+    "expected_sql": "SELECT DATE_TRUNC('day', order_date) as day, COUNT(*) as orders_count, LAG(COUNT(*)) OVER (ORDER BY DATE_TRUNC('day', order_date)) as prev_count, COUNT(*) - LAG(COUNT(*)) OVER (ORDER BY DATE_TRUNC('day', order_date)) as trend FROM orders GROUP BY DATE_TRUNC('day', order_date) ORDER BY day"
+  },
+  {
+    "id": "test_088",
+    "question": "Найди клиентов с заказами в каждый час рабочего дня",
+    "expected_sql": "SELECT c.name FROM customers c WHERE (SELECT COUNT(DISTINCT EXTRACT(HOUR FROM o.order_date)) FROM orders o WHERE o.customer_id = c.id AND EXTRACT(DOW FROM o.order_date) BETWEEN 1 AND 5) = 8"
+  },
+  {
+    "id": "test_089",
+    "question": "Покажи товары с максимальной выручкой в каждом месяце",
+    "expected_sql": "WITH monthly_products AS (SELECT p.name, EXTRACT(MONTH FROM o.order_date) as month, SUM(s.revenue) as total_revenue FROM products p JOIN sales s ON p.id = s.product_id JOIN orders o ON s.order_id = o.id GROUP BY p.id, p.name, EXTRACT(MONTH FROM o.order_date)) SELECT name, month, total_revenue FROM monthly_products mp1 WHERE total_revenue = (SELECT MAX(total_revenue) FROM monthly_products mp2 WHERE mp2.month = mp1.month)"
+  },
+  {
+    "id": "test_090",
+    "question": "Найди заказы с товарами только из одного склада",
+    "expected_sql": "SELECT o.id, i.warehouse, COUNT(*) as items_count FROM orders o JOIN sales s ON o.id = s.order_id JOIN inventory i ON s.product_id = i.product_id GROUP BY o.id, i.warehouse HAVING COUNT(DISTINCT i.warehouse) = 1"
+  },
+  {
+    "id": "test_091",
+    "question": "Покажи клиентов с заказами в каждый день года",
+    "expected_sql": "SELECT c.name FROM customers c WHERE (SELECT COUNT(DISTINCT o.order_date) FROM orders o WHERE o.customer_id = c.id AND EXTRACT(YEAR FROM o.order_date) = EXTRACT(YEAR FROM CURRENT_DATE)) = EXTRACT(DOY FROM CURRENT_DATE)"
+  },
+  {
+    "id": "test_092",
+    "question": "Найди товары с остатком больше суммы всех заказов этого товара",
+    "expected_sql": "SELECT p.name, i.current_stock, COALESCE(SUM(s.quantity), 0) as total_ordered FROM products p JOIN inventory i ON p.id = i.product_id LEFT JOIN sales s ON p.id = s.product_id GROUP BY p.id, p.name, i.current_stock HAVING i.current_stock > COALESCE(SUM(s.quantity), 0)"
+  },
+  {
+    "id": "test_093",
+    "question": "Покажи средний размер заказа по сегментам с ранжированием",
+    "expected_sql": "SELECT segment, AVG(amount) as avg_amount, RANK() OVER (ORDER BY AVG(amount) DESC) as rank FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY segment ORDER BY avg_amount DESC"
+  },
+  {
+    "id": "test_094",
+    "question": "Найди заказы с товарами из всех доступных складов",
+    "expected_sql": "SELECT o.id FROM orders o WHERE (SELECT COUNT(DISTINCT i.warehouse) FROM sales s JOIN inventory i ON s.product_id = i.product_id WHERE s.order_id = o.id) = (SELECT COUNT(DISTINCT warehouse) FROM inventory)"
+  },
+  {
+    "id": "test_095",
+    "question": "Покажи клиентов с максимальным количеством заказов в каждом часе",
+    "expected_sql": "WITH hourly_customers AS (SELECT c.name, EXTRACT(HOUR FROM o.order_date) as hour, COUNT(*) as order_count FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name, EXTRACT(HOUR FROM o.order_date)) SELECT name, hour, order_count FROM hourly_customers hc1 WHERE order_count = (SELECT MAX(order_count) FROM hourly_customers hc2 WHERE hc2.hour = hc1.hour)"
+  },
+  {
+    "id": "test_096",
+    "question": "Найди товары с прибылью в топ 10% по категории",
+    "expected_sql": "SELECT p.name, p.category, p.price - p.cost as profit FROM products p WHERE p.price - p.cost >= (SELECT PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY p2.price - p2.cost) FROM products p2 WHERE p2.category = p.category) ORDER BY p.category, profit DESC"
+  },
+  {
+    "id": "test_097",
+    "question": "Покажи динамику заказов по неделям с процентом изменения",
+    "expected_sql": "WITH weekly_orders AS (SELECT DATE_TRUNC('week', order_date) as week, COUNT(*) as orders_count FROM orders GROUP BY DATE_TRUNC('week', order_date)) SELECT week, orders_count, LAG(orders_count) OVER (ORDER BY week) as prev_count, ROUND((orders_count - LAG(orders_count) OVER (ORDER BY week)) * 100.0 / LAG(orders_count) OVER (ORDER BY week), 2) as percent_change FROM weekly_orders ORDER BY week"
+  },
+  {
+    "id": "test_098",
+    "question": "Найди клиентов с заказами в каждый день месяца с максимальным количеством дней",
+    "expected_sql": "WITH customer_days AS (SELECT c.name, EXTRACT(MONTH FROM o.order_date) as month, COUNT(DISTINCT EXTRACT(DAY FROM o.order_date)) as days_count FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name, EXTRACT(MONTH FROM o.order_date)) SELECT name, month, days_count FROM customer_days cd1 WHERE days_count = (SELECT MAX(days_count) FROM customer_days cd2 WHERE cd2.month = cd1.month)"
+  },
+  {
+    "id": "test_099",
+    "question": "Покажи товары с остатком больше суммы всех продаж за последний месяц",
+    "expected_sql": "SELECT p.name, i.current_stock, COALESCE(SUM(s.quantity), 0) as sold_last_month FROM products p JOIN inventory i ON p.id = i.product_id LEFT JOIN sales s ON p.id = s.product_id LEFT JOIN orders o ON s.order_id = o.id AND o.order_date >= CURRENT_DATE - INTERVAL '1 month' GROUP BY p.id, p.name, i.current_stock HAVING i.current_stock > COALESCE(SUM(s.quantity), 0)"
+  },
+  {
+    "id": "test_100",
+    "question": "Найди заказы с товарами из всех категорий и всех складов",
+    "expected_sql": "SELECT o.id FROM orders o WHERE (SELECT COUNT(DISTINCT p.category) FROM sales s JOIN products p ON s.product_id = p.id WHERE s.order_id = o.id) = (SELECT COUNT(DISTINCT category) FROM products) AND (SELECT COUNT(DISTINCT i.warehouse) FROM sales s JOIN inventory i ON s.product_id = i.product_id WHERE s.order_id = o.id) = (SELECT COUNT(DISTINCT warehouse) FROM inventory)"
+  }
+]

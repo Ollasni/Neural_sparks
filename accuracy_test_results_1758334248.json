@@ -1,0 +1,921 @@
+{
+  "timestamp": "2025-09-20 07:10:48",
+  "summary": {
+    "custom_api": {
+      "correct": 15,
+      "total": 50,
+      "accuracy": 0.3
+    },
+    "finetuned": {
+      "correct": 7,
+      "total": 50,
+      "accuracy": 0.14
+    }
+  },
+  "details": {
+    "custom_api": [
+      {
+        "id": "test_051",
+        "question": "Покажи топ 3 клиента по выручке с использованием оконной функции",
+        "expected": "SELECT name, total_revenue, ROW_NUMBER() OVER (ORDER BY total_revenue DESC) as rank FROM (SELECT c.name, SUM(o.amount) as total_revenue FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name) subq ORDER BY total_revenue DESC LIMIT 3",
+        "generated": "SELECT c.name, SUM(s.revenue) AS total_revenue FROM customers c JOIN orders o ON c.id = o.customer_id JOIN sales s ON o.id = s.order_id GROUP BY c.name ORDER BY total_revenue DESC LIMIT 3",
+        "correct": true,
+        "similarity": 0.6620689655172414,
+        "time": 2.0080387592315674
+      },
+      {
+        "id": "test_052",
+        "question": "Найди клиентов, которые делали заказы в каждом месяце этого года",
+        "expected": "SELECT c.name FROM customers c WHERE NOT EXISTS (SELECT 1 FROM generate_series(1, 12) as month WHERE NOT EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.id AND EXTRACT(MONTH FROM o.order_date) = month AND EXTRACT(YEAR FROM o.order_date) = EXTRACT(YEAR FROM CURRENT_DATE)))",
+        "generated": "SELECT c.id, c.name, EXTRACT(MONTH FROM o.order_date) AS order_month FROM customers c JOIN orders o ON c.id = o.customer_id WHERE EXTRACT(YEAR FROM o.order_date) = EXTRACT(YEAR FROM CURRENT_DATE) GROUP BY c.id, c LIMIT 1000",
+        "correct": false,
+        "similarity": 0.2601626016260163,
+        "time": 1.2005748748779297
+      },
+      {
+        "id": "test_053",
+        "question": "Покажи разницу между текущим и предыдущим заказом для каждого клиента",
+        "expected": "SELECT c.name, o.order_date, o.amount, LAG(o.amount) OVER (PARTITION BY c.id ORDER BY o.order_date) as prev_amount, o.amount - LAG(o.amount) OVER (PARTITION BY c.id ORDER BY o.order_date) as difference FROM customers c JOIN orders o ON c.id = o.customer_id ORDER BY c.name, o.order_date",
+        "generated": "",
+        "correct": false,
+        "similarity": 0.0,
+        "time": 1.125277042388916
+      },
+      {
+        "id": "test_054",
+        "question": "Найди товары с максимальной прибылью в каждой категории",
+        "expected": "SELECT p.name, p.category, p.price - p.cost as profit FROM products p WHERE p.price - p.cost = (SELECT MAX(price - cost) FROM products p2 WHERE p2.category = p.category)",
+        "generated": "SELECT category, name, revenue - costs AS profit FROM ( SELECT p.category, p.name, SUM(s.revenue) AS revenue, SUM(s.costs) AS costs FROM sales s JOIN products p ON s.product_id = p.id GROUP BY p.category, p.name ) AS sub LIMIT 1000",
+        "correct": false,
+        "similarity": 0.15228426395939088,
+        "time": 1.1255171298980713
+      },
+      {
+        "id": "test_055",
+        "question": "Покажи клиентов с растущим трендом заказов по месяцам",
+        "expected": "WITH monthly_orders AS (SELECT c.id, c.name, EXTRACT(MONTH FROM o.order_date) as month, COUNT(*) as order_count FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name, EXTRACT(MONTH FROM o.order_date)) SELECT DISTINCT name FROM monthly_orders mo1 WHERE order_count > (SELECT order_count FROM monthly_orders mo2 WHERE mo2.id = mo1.id AND mo2.month = mo1.month - 1)",
+        "generated": "",
+        "correct": false,
+        "similarity": 0.0,
+        "time": 1.7406039237976074
+      },
+      {
+        "id": "test_056",
+        "question": "Найди товары, которые заказывались только один раз",
+        "expected": "SELECT p.name FROM products p JOIN sales s ON p.id = s.product_id GROUP BY p.id, p.name HAVING COUNT(*) = 1",
+        "generated": "SELECT p.* FROM products p WHERE p.id IN ( SELECT s.product_id FROM sales s GROUP BY s.product_id HAVING COUNT(DISTINCT s.order_id) = 1 ) LIMIT 1000",
+        "correct": true,
+        "similarity": 0.5943775100401606,
+        "time": 0.8181009292602539
+      },
+      {
+        "id": "test_057",
+        "question": "Покажи средний размер заказа по сегментам клиентов",
+        "expected": "SELECT c.segment, AVG(o.amount) as avg_order_amount FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.segment ORDER BY avg_order_amount DESC",
+        "generated": "SELECT c.segment, AVG(o.amount) AS average_order_size FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.segment ORDER BY average_order_size DESC LIMIT 1000",
+        "correct": true,
+        "similarity": 0.8792569659442725,
+        "time": 0.9207179546356201
+      },
+      {
+        "id": "test_058",
+        "question": "Найди клиентов, которые заказывали товары из всех категорий",
+        "expected": "SELECT c.name FROM customers c WHERE (SELECT COUNT(DISTINCT p.category) FROM products p JOIN sales s ON p.id = s.product_id JOIN orders o ON s.order_id = o.id WHERE o.customer_id = c.id) = (SELECT COUNT(DISTINCT category) FROM products)",
+        "generated": "SELECT c.name, c.email FROM customers c WHERE c.id IN ( SELECT o.customer_id FROM orders o JOIN sales s ON o.id = s.order_id JOIN products p ON s.product_id = p.id GROUP BY o.customer_id HAVING COUNT(DISTINCT p.category) = (SELECT COUNT(DISTINCT category) LIMIT 1000",
+        "correct": false,
+        "similarity": 0.4016393442622951,
+        "time": 1.1241483688354492
+      },
+      {
+        "id": "test_059",
+        "question": "Покажи товары с нулевой прибылью",
+        "expected": "SELECT name, price, cost FROM products WHERE price = cost",
+        "generated": "SELECT p.* FROM bi_demo.products p WHERE p.id IN ( SELECT s.product_id FROM bi_demo.sales s GROUP BY s.product_id HAVING SUM(s.revenue - s.costs) = 0 ) LIMIT 1000",
+        "correct": false,
+        "similarity": 0.35348837209302325,
+        "time": 0.9212939739227295
+      },
+      {
+        "id": "test_060",
+        "question": "Найди заказы с количеством товаров больше среднего",
+        "expected": "SELECT o.id, o.amount, COUNT(s.id) as item_count FROM orders o JOIN sales s ON o.id = s.order_id GROUP BY o.id, o.amount HAVING COUNT(s.id) > (SELECT AVG(item_count) FROM (SELECT COUNT(*) as item_count FROM sales GROUP BY order_id) subq)",
+        "generated": "SELECT o.* FROM orders o JOIN ( SELECT order_id, SUM(quantity) AS total_quantity FROM sales GROUP BY order_id ) s ON o.id = s.order_id WHERE s.total_quantity > (SELECT AVG(total_quantity) FROM ( SELECT order_id, SUM(quantity) AS total_quantity FROM sales GROUP BY LIMIT 1000",
+        "correct": false,
+        "similarity": 0.2783300198807157,
+        "time": 1.7398350238800049
+      },
+      {
+        "id": "test_061",
+        "question": "Покажи клиентов с максимальным количеством заказов в каждом месяце",
+        "expected": "WITH monthly_customers AS (SELECT c.name, EXTRACT(MONTH FROM o.order_date) as month, COUNT(*) as order_count FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name, EXTRACT(MONTH FROM o.order_date)) SELECT name, month, order_count FROM monthly_customers mc1 WHERE order_count = (SELECT MAX(order_count) FROM monthly_customers mc2 WHERE mc2.month = mc1.month)",
+        "generated": "",
+        "correct": false,
+        "similarity": 0.0,
+        "time": 1.1272938251495361
+      },
+      {
+        "id": "test_062",
+        "question": "Найди товары, которые никогда не продавались",
+        "expected": "SELECT p.name FROM products p LEFT JOIN sales s ON p.id = s.product_id WHERE s.product_id IS NULL",
+        "generated": "SELECT p.* FROM bi_demo.products p LEFT JOIN bi_demo.sales s ON p.id = s.product_id WHERE s.product_id IS NULL LIMIT 1000",
+        "correct": true,
+        "similarity": 0.8504672897196262,
+        "time": 0.6119048595428467
+      },
+      {
+        "id": "test_063",
+        "question": "Покажи динамику продаж по неделям",
+        "expected": "SELECT DATE_TRUNC('week', order_date) as week, COUNT(*) as orders_count, SUM(amount) as total_revenue FROM orders GROUP BY DATE_TRUNC('week', order_date) ORDER BY week",
+        "generated": "SELECT EXTRACT(WEEK FROM s.order_date) AS week_number, EXTRACT(YEAR FROM s.order_date) AS year, SUM(s.revenue) AS total_revenue, SUM(s.costs) AS total_costs FROM sales s JOIN orders o ON s.order_id = o.id GROUP BY EXTRACT(W LIMIT 1000",
+        "correct": false,
+        "similarity": 0.19047619047619047,
+        "time": 1.1252751350402832
+      },
+      {
+        "id": "test_064",
+        "question": "Найди клиентов с заказами на сумму больше 50000 в этом году",
+        "expected": "SELECT c.name, SUM(o.amount) as total_amount FROM customers c JOIN orders o ON c.id = o.customer_id WHERE EXTRACT(YEAR FROM o.order_date) = EXTRACT(YEAR FROM CURRENT_DATE) GROUP BY c.id, c.name HAVING SUM(o.amount) > 50000 ORDER BY total_amount DESC",
+        "generated": "SELECT DISTINCT c.id, c.name, c.email FROM bi_demo.customers c JOIN bi_demo.orders o ON c.id = o.customer_id WHERE o.order_date >= CURRENT_DATE - INTERVAL '1 year' AND o.amount > 50000 LIMIT 1000",
+        "correct": true,
+        "similarity": 0.5879629629629629,
+        "time": 0.9219858646392822
+      },
+      {
+        "id": "test_065",
+        "question": "Покажи товары с остатком меньше 5% от максимального остатка",
+        "expected": "SELECT p.name, i.current_stock FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.current_stock < (SELECT MAX(current_stock) * 0.05 FROM inventory)",
+        "generated": "SELECT p.* FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.current_stock < (SELECT MAX(current_stock) FROM inventory) * 0.05 LIMIT 1000",
+        "correct": true,
+        "similarity": 0.8448844884488449,
+        "time": 1.432262897491455
+      },
+      {
+        "id": "test_066",
+        "question": "Найди заказы с товарами из разных категорий",
+        "expected": "SELECT o.id, COUNT(DISTINCT p.category) as categories_count FROM orders o JOIN sales s ON o.id = s.order_id JOIN products p ON s.product_id = p.id GROUP BY o.id HAVING COUNT(DISTINCT p.category) > 1",
+        "generated": "SELECT o.id, o.order_date, p1.category, p2.category FROM orders o JOIN sales s1 ON o.id = s1.order_id JOIN products p1 ON s1.product_id = p1.id JOIN sales s2 ON o.id = s2.order_id AND s1.product_id != s2.product_id JOIN products p2 ON s2 LIMIT 1000",
+        "correct": false,
+        "similarity": 0.25925925925925924,
+        "time": 1.1229522228240967
+      },
+      {
+        "id": "test_067",
+        "question": "Покажи клиентов с заказами в выходные дни",
+        "expected": "SELECT DISTINCT c.name FROM customers c JOIN orders o ON c.id = o.customer_id WHERE EXTRACT(DOW FROM o.order_date) IN (0, 6)",
+        "generated": "SELECT DISTINCT c.id, c.name, c.email FROM bi_demo.customers c JOIN bi_demo.orders o ON c.id = o.customer_id WHERE EXTRACT(DOW FROM o.order_date) IN (6, 0) LIMIT 1000",
+        "correct": true,
+        "similarity": 0.8391608391608392,
+        "time": 0.7870888710021973
+      },
+      {
+        "id": "test_068",
+        "question": "Найди товары с максимальной выручкой в каждой категории",
+        "expected": "SELECT p.name, p.category, SUM(s.revenue) as total_revenue FROM products p JOIN sales s ON p.id = s.product_id GROUP BY p.id, p.name, p.category HAVING SUM(s.revenue) = (SELECT MAX(total_revenue) FROM (SELECT SUM(s2.revenue) as total_revenue FROM products p2 JOIN sales s2 ON p2.id = s2.product_id WHERE p2.category = p.category GROUP BY p2.id) subq)",
+        "generated": "SELECT p.category, p.name, SUM(s.revenue) AS total_revenue FROM sales s JOIN products p ON s.product_id = p.id GROUP BY p.category, p.name ORDER BY p.category, total_revenue DESC LIMIT 1000",
+        "correct": true,
+        "similarity": 0.502835538752363,
+        "time": 1.1602768898010254
+      },
+      {
+        "id": "test_069",
+        "question": "Покажи средний чек по дням недели с названиями дней",
+        "expected": "SELECT CASE EXTRACT(DOW FROM order_date) WHEN 0 THEN 'Воскресенье' WHEN 1 THEN 'Понедельник' WHEN 2 THEN 'Вторник' WHEN 3 THEN 'Среда' WHEN 4 THEN 'Четверг' WHEN 5 THEN 'Пятница' WHEN 6 THEN 'Суббота' END as day_name, AVG(amount) as avg_amount FROM orders GROUP BY EXTRACT(DOW FROM order_date) ORDER BY EXTRACT(DOW FROM order_date)",
+        "generated": "SELECT EXTRACT(DOW FROM o.order_date) AS day_of_week, TO_CHAR(AVG(o.amount), 'FM9999999999.00') AS average_check FROM orders o GROUP BY EXTRACT(DOW FROM o.order_date) ORDER BY day_of_week LIMIT 1000",
+        "correct": false,
+        "similarity": 0.4839319470699433,
+        "time": 1.021557092666626
+      },
+      {
+        "id": "test_070",
+        "question": "Найди клиентов с заказами в каждый день недели",
+        "expected": "SELECT c.name FROM customers c WHERE (SELECT COUNT(DISTINCT EXTRACT(DOW FROM o.order_date)) FROM orders o WHERE o.customer_id = c.id) = 7",
+        "generated": "SELECT EXTRACT(DOW FROM o.order_date) AS day_of_week, c.name, COUNT(DISTINCT o.id) AS orders_count FROM orders o JOIN customers c ON o.customer_id = c.id GROUP BY EXTRACT(DOW FROM o.order_date), c.name ORDER BY day_of LIMIT 1000",
+        "correct": false,
+        "similarity": 0.055710306406685235,
+        "time": 1.223203182220459
+      },
+      {
+        "id": "test_071",
+        "question": "Покажи товары с остатком больше среднего по складу",
+        "expected": "SELECT p.name, i.warehouse, i.current_stock FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.current_stock > (SELECT AVG(current_stock) FROM inventory i2 WHERE i2.warehouse = i.warehouse) ORDER BY i.warehouse, i.current_stock DESC",
+        "generated": "SELECT p.* FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.current_stock > (SELECT AVG(current_stock) FROM inventory) LIMIT 1000",
+        "correct": true,
+        "similarity": 0.6860158311345647,
+        "time": 0.7166180610656738
+      },
+      {
+        "id": "test_072",
+        "question": "Найди заказы с товарами только из одной категории",
+        "expected": "SELECT o.id, p.category, COUNT(*) as items_count FROM orders o JOIN sales s ON o.id = s.order_id JOIN products p ON s.product_id = p.id GROUP BY o.id, p.category HAVING COUNT(DISTINCT p.category) = 1",
+        "generated": "SELECT o.* FROM orders o JOIN sales s ON o.id = s.order_id JOIN products p ON s.product_id = p.id GROUP BY o.id HAVING COUNT(DISTINCT p.category) = 1 LIMIT 1000",
+        "correct": true,
+        "similarity": 0.8242074927953891,
+        "time": 0.7823035717010498
+      },
+      {
+        "id": "test_073",
+        "question": "Покажи клиентов с максимальным количеством заказов в каждом квартале",
+        "expected": "WITH quarterly_customers AS (SELECT c.name, EXTRACT(QUARTER FROM o.order_date) as quarter, COUNT(*) as order_count FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name, EXTRACT(QUARTER FROM o.order_date)) SELECT name, quarter, order_count FROM quarterly_customers qc1 WHERE order_count = (SELECT MAX(order_count) FROM quarterly_customers qc2 WHERE qc2.quarter = qc1.quarter)",
+        "generated": "",
+        "correct": false,
+        "similarity": 0.0,
+        "time": 1.160376787185669
+      },
+      {
+        "id": "test_074",
+        "question": "Найди товары с прибылью больше 1000 рублей",
+        "expected": "SELECT name, price, cost, price - cost as profit FROM products WHERE price - cost > 1000 ORDER BY profit DESC",
+        "generated": "SELECT p.* FROM products p JOIN ( SELECT product_id, SUM(revenue - costs) AS total_profit FROM sales GROUP BY product_id ) s ON p.id = s.product_id WHERE s.total_profit > 1000 LIMIT 1000",
+        "correct": false,
+        "similarity": 0.36678200692041524,
+        "time": 0.8481168746948242
+      },
+      {
+        "id": "test_075",
+        "question": "Покажи динамику заказов по часам в рабочие дни",
+        "expected": "SELECT EXTRACT(HOUR FROM order_date) as hour, COUNT(*) as orders_count FROM orders WHERE EXTRACT(DOW FROM order_date) BETWEEN 1 AND 5 GROUP BY EXTRACT(HOUR FROM order_date) ORDER BY hour",
+        "generated": "SELECT EXTRACT(HOUR FROM o.order_date) AS hour_of_day, COUNT(o.id) AS number_of_orders FROM orders o WHERE EXTRACT(DOW FROM o.order_date) BETWEEN 1 AND 5 GROUP BY EXTRACT(HOUR FROM o.order_date) ORDER BY hour_of_day LIMIT 1000",
+        "correct": true,
+        "similarity": 0.5533980582524272,
+        "time": 1.19815993309021
+      },
+      {
+        "id": "test_076",
+        "question": "Найди клиентов с заказами в каждый месяц последнего года",
+        "expected": "SELECT c.name FROM customers c WHERE (SELECT COUNT(DISTINCT EXTRACT(MONTH FROM o.order_date)) FROM orders o WHERE o.customer_id = c.id AND o.order_date >= CURRENT_DATE - INTERVAL '1 year') = 12",
+        "generated": "SELECT c.id, c.name, EXTRACT(MONTH FROM o.order_date) AS order_month FROM customers c JOIN orders o ON c.id = o.customer_id WHERE o.order_date >= CURRENT_DATE - INTERVAL '1 year' GROUP BY c.id, c.name, EXTRACT LIMIT 1000",
+        "correct": false,
+        "similarity": 0.3424317617866005,
+        "time": 1.3303492069244385
+      },
+      {
+        "id": "test_077",
+        "question": "Покажи товары с максимальным остатком на каждом складе",
+        "expected": "SELECT p.name, i.warehouse, i.current_stock FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.current_stock = (SELECT MAX(current_stock) FROM inventory i2 WHERE i2.warehouse = i.warehouse) ORDER BY i.warehouse, i.current_stock DESC",
+        "generated": "SELECT i.warehouse, p.name, i.current_stock FROM inventory i JOIN products p ON i.product_id = p.id WHERE (i.warehouse, i.current_stock) IN ( SELECT warehouse, MAX(current_stock) FROM inventory GROUP BY warehouse ) LIMIT 1000",
+        "correct": false,
+        "similarity": 0.44155844155844154,
+        "time": 0.922468900680542
+      },
+      {
+        "id": "test_078",
+        "question": "Найди заказы с товарами из всех доступных категорий",
+        "expected": "SELECT o.id FROM orders o WHERE (SELECT COUNT(DISTINCT p.category) FROM sales s JOIN products p ON s.product_id = p.id WHERE s.order_id = o.id) = (SELECT COUNT(DISTINCT category) FROM products)",
+        "generated": "SELECT DISTINCT o.id, o.order_date, o.amount, o.status FROM orders o JOIN sales s ON o.id = s.order_id JOIN products p ON s.product_id = p.id WHERE p.category IN ( SELECT DISTINCT category FROM products ) LIMIT 1000",
+        "correct": false,
+        "similarity": 0.19597989949748743,
+        "time": 0.9167721271514893
+      },
+      {
+        "id": "test_079",
+        "question": "Покажи клиентов с растущей выручкой по месяцам",
+        "expected": "WITH monthly_revenue AS (SELECT c.id, c.name, EXTRACT(MONTH FROM o.order_date) as month, SUM(o.amount) as revenue FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name, EXTRACT(MONTH FROM o.order_date)) SELECT DISTINCT name FROM monthly_revenue mr1 WHERE revenue > (SELECT revenue FROM monthly_revenue mr2 WHERE mr2.id = mr1.id AND mr2.month = mr1.month - 1)",
+        "generated": "",
+        "correct": false,
+        "similarity": 0.0,
+        "time": 1.1311678886413574
+      },
+      {
+        "id": "test_080",
+        "question": "Найди товары, которые заказывались в каждом месяце",
+        "expected": "SELECT p.name FROM products p WHERE (SELECT COUNT(DISTINCT EXTRACT(MONTH FROM o.order_date)) FROM sales s JOIN orders o ON s.order_id = o.id WHERE s.product_id = p.id) = 12",
+        "generated": "SELECT p.id, p.name, EXTRACT(MONTH FROM o.order_date) AS month, EXTRACT(YEAR FROM o.order_date) AS year FROM products p JOIN sales s ON p.id = s.product_id JOIN orders o ON s.order_id = o.id ORDER BY year, LIMIT 1000",
+        "correct": false,
+        "similarity": 0.164021164021164,
+        "time": 1.1230850219726562
+      },
+      {
+        "id": "test_081",
+        "question": "Покажи средний размер заказа по статусам с процентом от общего",
+        "expected": "SELECT status, AVG(amount) as avg_amount, COUNT(*) as order_count, ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM orders), 2) as percentage FROM orders GROUP BY status ORDER BY avg_amount DESC",
+        "generated": "SELECT o.status, AVG(o.amount) AS average_order_size, ROUND(AVG(o.amount) * 100 / SUM(AVG(o.amount)) OVER (), 2) AS percentage_of_total FROM orders o GROUP BY o.status ORDER BY percentage_of_total DESC LIMIT 1000",
+        "correct": false,
+        "similarity": 0.3118811881188119,
+        "time": 1.2845089435577393
+      },
+      {
+        "id": "test_082",
+        "question": "Найди клиентов с заказами в каждый день месяца",
+        "expected": "SELECT c.name FROM customers c WHERE (SELECT COUNT(DISTINCT EXTRACT(DAY FROM o.order_date)) FROM orders o WHERE o.customer_id = c.id AND EXTRACT(MONTH FROM o.order_date) = EXTRACT(MONTH FROM CURRENT_DATE)) = EXTRACT(DAY FROM DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month' - INTERVAL '1 day')",
+        "generated": "SELECT c.id, c.name, EXTRACT(DAY FROM o.order_date) AS day FROM customers c JOIN orders o ON c.id = o.customer_id WHERE EXTRACT(MONTH FROM o.order_date) = EXTRACT(MONTH FROM CURRENT_DATE) AND EXTRACT(YEAR FROM o.order_date LIMIT 1000",
+        "correct": false,
+        "similarity": 0.38697318007662834,
+        "time": 1.1719121932983398
+      },
+      {
+        "id": "test_083",
+        "question": "Покажи товары с остатком меньше 10% от максимального в категории",
+        "expected": "SELECT p.name, p.category, i.current_stock FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.current_stock < (SELECT MAX(i2.current_stock) * 0.1 FROM inventory i2 JOIN products p2 ON i2.product_id = p2.id WHERE p2.category = p.category)",
+        "generated": "SELECT p.category, p.name, i.current_stock FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.current_stock < ( SELECT MAX(i2.current_stock) * 0.1 FROM inventory i2 WHERE i2.product_id = p.id AND i2.current_stock > 0 ) ORDER BY p.category LIMIT 1000",
+        "correct": true,
+        "similarity": 0.7096774193548387,
+        "time": 1.124812126159668
+      },
+      {
+        "id": "test_084",
+        "question": "Найди заказы с товарами из разных складов",
+        "expected": "SELECT o.id, COUNT(DISTINCT i.warehouse) as warehouses_count FROM orders o JOIN sales s ON o.id = s.order_id JOIN inventory i ON s.product_id = i.product_id GROUP BY o.id HAVING COUNT(DISTINCT i.warehouse) > 1",
+        "generated": "SELECT o.id, o.order_date, p.name AS product_name, i.warehouse FROM orders o JOIN sales s ON o.id = s.order_id JOIN products p ON s.product_id = p.id JOIN inventory i ON p.id = i.product_id WHERE (o.id, i.warehouse) IN ( SELECT o.id, i.warehouse FROM LIMIT 1000",
+        "correct": false,
+        "similarity": 0.15283842794759825,
+        "time": 1.1271300315856934
+      },
+      {
+        "id": "test_085",
+        "question": "Покажи клиентов с максимальным количеством заказов в каждом дне недели",
+        "expected": "WITH daily_customers AS (SELECT c.name, EXTRACT(DOW FROM o.order_date) as day_of_week, COUNT(*) as order_count FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name, EXTRACT(DOW FROM o.order_date)) SELECT name, day_of_week, order_count FROM daily_customers dc1 WHERE order_count = (SELECT MAX(order_count) FROM daily_customers dc2 WHERE dc2.day_of_week = dc1.day_of_week)",
+        "generated": "SELECT c.id, c.name, COUNT(o.id) as order_count FROM bi_demo.customers c JOIN bi_demo.orders o ON c.id = o.customer_id WHERE EXTRACT(DOW FROM o.order_date) = 0 GROUP BY c.id, c.name ORDER BY order_count DESC LIMIT 1000",
+        "correct": false,
+        "similarity": 0.2159468438538206,
+        "time": 1.125288963317871
+      },
+      {
+        "id": "test_086",
+        "question": "Найди товары с прибылью больше средней по категории",
+        "expected": "SELECT p.name, p.category, p.price - p.cost as profit FROM products p WHERE p.price - p.cost > (SELECT AVG(p2.price - p2.cost) FROM products p2 WHERE p2.category = p.category) ORDER BY profit DESC",
+        "generated": "",
+        "correct": false,
+        "similarity": 0.0,
+        "time": 1.2716760635375977
+      },
+      {
+        "id": "test_087",
+        "question": "Покажи динамику заказов по дням с трендом",
+        "expected": "SELECT DATE_TRUNC('day', order_date) as day, COUNT(*) as orders_count, LAG(COUNT(*)) OVER (ORDER BY DATE_TRUNC('day', order_date)) as prev_count, COUNT(*) - LAG(COUNT(*)) OVER (ORDER BY DATE_TRUNC('day', order_date)) as trend FROM orders GROUP BY DATE_TRUNC('day', order_date) ORDER BY day",
+        "generated": "SELECT EXTRACT(YEAR FROM order_date) AS year, EXTRACT(MONTH FROM order_date) AS month, EXTRACT(DAY FROM order_date) AS day, COUNT(*) AS orders_count, LAG(COUNT(*), 1) OVER (ORDER BY order_date) AS prev_day_orders, COUNT(*) - LAG(COUNT(* LIMIT 1000",
+        "correct": false,
+        "similarity": 0.43656716417910446,
+        "time": 1.1841232776641846
+      },
+      {
+        "id": "test_088",
+        "question": "Найди клиентов с заказами в каждый час рабочего дня",
+        "expected": "SELECT c.name FROM customers c WHERE (SELECT COUNT(DISTINCT EXTRACT(HOUR FROM o.order_date)) FROM orders o WHERE o.customer_id = c.id AND EXTRACT(DOW FROM o.order_date) BETWEEN 1 AND 5) = 8",
+        "generated": "SELECT c.id, c.name, EXTRACT(HOUR FROM o.order_date) AS order_hour FROM customers c JOIN orders o ON c.id = o.customer_id WHERE EXTRACT(DOW FROM o.order_date) BETWEEN 1 AND 5 GROUP BY c.id, c.name, LIMIT 1000",
+        "correct": false,
+        "similarity": 0.1329923273657289,
+        "time": 1.1252470016479492
+      },
+      {
+        "id": "test_089",
+        "question": "Покажи товары с максимальной выручкой в каждом месяце",
+        "expected": "WITH monthly_products AS (SELECT p.name, EXTRACT(MONTH FROM o.order_date) as month, SUM(s.revenue) as total_revenue FROM products p JOIN sales s ON p.id = s.product_id JOIN orders o ON s.order_id = o.id GROUP BY p.id, p.name, EXTRACT(MONTH FROM o.order_date)) SELECT name, month, total_revenue FROM monthly_products mp1 WHERE total_revenue = (SELECT MAX(total_revenue) FROM monthly_products mp2 WHERE mp2.month = mp1.month)",
+        "generated": "",
+        "correct": false,
+        "similarity": 0.0,
+        "time": 1.125143051147461
+      },
+      {
+        "id": "test_090",
+        "question": "Найди заказы с товарами только из одного склада",
+        "expected": "SELECT o.id, i.warehouse, COUNT(*) as items_count FROM orders o JOIN sales s ON o.id = s.order_id JOIN inventory i ON s.product_id = i.product_id GROUP BY o.id, i.warehouse HAVING COUNT(DISTINCT i.warehouse) = 1",
+        "generated": "SELECT o.* FROM orders o JOIN sales s ON o.id = s.order_id JOIN inventory i ON s.product_id = i.product_id WHERE i.warehouse IN ( SELECT warehouse FROM inventory GROUP BY warehouse HAVING COUNT(DISTINCT product_id) = (SELECT COUNT(*) FROM products) ) GROUP BY o.id HAVING COUNT(D LIMIT 1000",
+        "correct": false,
+        "similarity": 0.4703476482617587,
+        "time": 1.1264917850494385
+      },
+      {
+        "id": "test_091",
+        "question": "Покажи клиентов с заказами в каждый день года",
+        "expected": "SELECT c.name FROM customers c WHERE (SELECT COUNT(DISTINCT o.order_date) FROM orders o WHERE o.customer_id = c.id AND EXTRACT(YEAR FROM o.order_date) = EXTRACT(YEAR FROM CURRENT_DATE)) = EXTRACT(DOY FROM CURRENT_DATE)",
+        "generated": "SELECT c.id, c.name, c.email, o.order_date FROM bi_demo.customers c JOIN bi_demo.orders o ON c.id = o.customer_id ORDER BY o.order_date LIMIT 1000",
+        "correct": false,
+        "similarity": 0.43820224719101125,
+        "time": 0.9211041927337646
+      },
+      {
+        "id": "test_092",
+        "question": "Найди товары с остатком больше суммы всех заказов этого товара",
+        "expected": "SELECT p.name, i.current_stock, COALESCE(SUM(s.quantity), 0) as total_ordered FROM products p JOIN inventory i ON p.id = i.product_id LEFT JOIN sales s ON p.id = s.product_id GROUP BY p.id, p.name, i.current_stock HAVING i.current_stock > COALESCE(SUM(s.quantity), 0)",
+        "generated": "SELECT p.* FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.current_stock > ( SELECT COALESCE(SUM(s.quantity), 0) FROM sales s WHERE s.product_id = p.id ) LIMIT 1000",
+        "correct": true,
+        "similarity": 0.5149425287356322,
+        "time": 0.9199578762054443
+      },
+      {
+        "id": "test_093",
+        "question": "Покажи средний размер заказа по сегментам с ранжированием",
+        "expected": "SELECT segment, AVG(amount) as avg_amount, RANK() OVER (ORDER BY AVG(amount) DESC) as rank FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY segment ORDER BY avg_amount DESC",
+        "generated": "SELECT c.segment, AVG(o.amount) AS average_order_size FROM bi_demo.orders o JOIN bi_demo.customers c ON o.customer_id = c.id GROUP BY c.segment ORDER BY average_order_size DESC LIMIT 1000",
+        "correct": true,
+        "similarity": 0.6108108108108108,
+        "time": 0.9197030067443848
+      },
+      {
+        "id": "test_094",
+        "question": "Найди заказы с товарами из всех доступных складов",
+        "expected": "SELECT o.id FROM orders o WHERE (SELECT COUNT(DISTINCT i.warehouse) FROM sales s JOIN inventory i ON s.product_id = i.product_id WHERE s.order_id = o.id) = (SELECT COUNT(DISTINCT warehouse) FROM inventory)",
+        "generated": "SELECT DISTINCT o.id FROM orders o JOIN sales s ON o.id = s.order_id JOIN inventory i ON s.product_id = i.product_id WHERE i.warehouse IN ( SELECT warehouse FROM inventory GROUP BY warehouse ) LIMIT 1000",
+        "correct": true,
+        "similarity": 0.6331658291457286,
+        "time": 0.8346056938171387
+      },
+      {
+        "id": "test_095",
+        "question": "Покажи клиентов с максимальным количеством заказов в каждом часе",
+        "expected": "WITH hourly_customers AS (SELECT c.name, EXTRACT(HOUR FROM o.order_date) as hour, COUNT(*) as order_count FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name, EXTRACT(HOUR FROM o.order_date)) SELECT name, hour, order_count FROM hourly_customers hc1 WHERE order_count = (SELECT MAX(order_count) FROM hourly_customers hc2 WHERE hc2.hour = hc1.hour)",
+        "generated": "",
+        "correct": false,
+        "similarity": 0.0,
+        "time": 1.1983020305633545
+      },
+      {
+        "id": "test_096",
+        "question": "Найди товары с прибылью в топ 10% по категории",
+        "expected": "SELECT p.name, p.category, p.price - p.cost as profit FROM products p WHERE p.price - p.cost >= (SELECT PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY p2.price - p2.cost) FROM products p2 WHERE p2.category = p.category) ORDER BY p.category, profit DESC",
+        "generated": "",
+        "correct": false,
+        "similarity": 0.0,
+        "time": 1.0862820148468018
+      },
+      {
+        "id": "test_097",
+        "question": "Покажи динамику заказов по неделям с процентом изменения",
+        "expected": "WITH weekly_orders AS (SELECT DATE_TRUNC('week', order_date) as week, COUNT(*) as orders_count FROM orders GROUP BY DATE_TRUNC('week', order_date)) SELECT week, orders_count, LAG(orders_count) OVER (ORDER BY week) as prev_count, ROUND((orders_count - LAG(orders_count) OVER (ORDER BY week)) * 100.0 / LAG(orders_count) OVER (ORDER BY week), 2) as percent_change FROM weekly_orders ORDER BY week",
+        "generated": "",
+        "correct": false,
+        "similarity": 0.0,
+        "time": 1.279676914215088
+      },
+      {
+        "id": "test_098",
+        "question": "Найди клиентов с заказами в каждый день месяца с максимальным количеством дней",
+        "expected": "WITH customer_days AS (SELECT c.name, EXTRACT(MONTH FROM o.order_date) as month, COUNT(DISTINCT EXTRACT(DAY FROM o.order_date)) as days_count FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name, EXTRACT(MONTH FROM o.order_date)) SELECT name, month, days_count FROM customer_days cd1 WHERE days_count = (SELECT MAX(days_count) FROM customer_days cd2 WHERE cd2.month = cd1.month)",
+        "generated": "",
+        "correct": false,
+        "similarity": 0.0,
+        "time": 1.125981092453003
+      },
+      {
+        "id": "test_099",
+        "question": "Покажи товары с остатком больше суммы всех продаж за последний месяц",
+        "expected": "SELECT p.name, i.current_stock, COALESCE(SUM(s.quantity), 0) as sold_last_month FROM products p JOIN inventory i ON p.id = i.product_id LEFT JOIN sales s ON p.id = s.product_id LEFT JOIN orders o ON s.order_id = o.id AND o.order_date >= CURRENT_DATE - INTERVAL '1 month' GROUP BY p.id, p.name, i.current_stock HAVING i.current_stock > COALESCE(SUM(s.quantity), 0)",
+        "generated": "SELECT p.* FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.current_stock > ( SELECT COALESCE(SUM(s.revenue), 0) FROM sales s JOIN orders o ON s.order_id = o.id WHERE o.order_date > CURRENT_DATE - INTERVAL '1 month' AND s.product_id = p.id LIMIT 1000",
+        "correct": false,
+        "similarity": 0.2730263157894737,
+        "time": 1.1255590915679932
+      },
+      {
+        "id": "test_100",
+        "question": "Найди заказы с товарами из всех категорий и всех складов",
+        "expected": "SELECT o.id FROM orders o WHERE (SELECT COUNT(DISTINCT p.category) FROM sales s JOIN products p ON s.product_id = p.id WHERE s.order_id = o.id) = (SELECT COUNT(DISTINCT category) FROM products) AND (SELECT COUNT(DISTINCT i.warehouse) FROM sales s JOIN inventory i ON s.product_id = i.product_id WHERE s.order_id = o.id) = (SELECT COUNT(DISTINCT warehouse) FROM inventory)",
+        "generated": "SELECT DISTINCT o.id, o.order_date, p.category, i.warehouse FROM orders o JOIN sales s ON o.id = s.order_id JOIN products p ON s.product_id = p.id JOIN inventory i ON p.id = i.product_id LIMIT 1000",
+        "correct": false,
+        "similarity": 0.4218181818181818,
+        "time": 0.9212090969085693
+      }
+    ],
+    "finetuned": [
+      {
+        "id": "test_051",
+        "question": "Покажи топ 3 клиента по выручке с использованием оконной функции",
+        "expected": "SELECT name, total_revenue, ROW_NUMBER() OVER (ORDER BY total_revenue DESC) as rank FROM (SELECT c.name, SUM(o.amount) as total_revenue FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name) subq ORDER BY total_revenue DESC LIMIT 3",
+        "generated": "SELECT T1.name, T1.id, SUM(T3.revenue) AS revenue FROM customers AS T1 INNER JOIN orders AS T2 ON T1.id = T2.customer_id INNER JOIN sales AS T3 ON T2.id = T3.order_id GROUP BY T1.id ORDER BY SUM(T3.revenue) DESC LIMIT 1000",
+        "correct": false,
+        "similarity": 0.1276595744680851,
+        "time": 23.78996181488037
+      },
+      {
+        "id": "test_052",
+        "question": "Найди клиентов, которые делали заказы в каждом месяце этого года",
+        "expected": "SELECT c.name FROM customers c WHERE NOT EXISTS (SELECT 1 FROM generate_series(1, 12) as month WHERE NOT EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.id AND EXTRACT(MONTH FROM o.order_date) = month AND EXTRACT(YEAR FROM o.order_date) = EXTRACT(YEAR FROM CURRENT_DATE)))",
+        "generated": "SELECT DISTINCT T1.name FROM customers AS T1 INNER JOIN orders AS T2 ON T1.id = T2.customer_id WHERE T2.order_date BETWEEN '2019-01-01' AND '2019-12-31' GROUP BY T1.name HAVING COUNT(T2 LIMIT 1000",
+        "correct": false,
+        "similarity": 0.3854389721627409,
+        "time": 21.387552738189697
+      },
+      {
+        "id": "test_053",
+        "question": "Покажи разницу между текущим и предыдущим заказом для каждого клиента",
+        "expected": "SELECT c.name, o.order_date, o.amount, LAG(o.amount) OVER (PARTITION BY c.id ORDER BY o.order_date) as prev_amount, o.amount - LAG(o.amount) OVER (PARTITION BY c.id ORDER BY o.order_date) as difference FROM customers c JOIN orders o ON c.id = o.customer_id ORDER BY c.name, o.order_date",
+        "generated": "SELECT T1.customer_id, T1.order_date, T1.amount - T2.amount AS difference FROM orders AS T1 INNER JOIN orders AS T2 ON T1.customer_id = T2.customer_id WHERE T1.order_date = T2.order_date AND T1.order_date > T2.order_date ORDER LIMIT 1000",
+        "correct": false,
+        "similarity": 0.26407766990291265,
+        "time": 22.765611171722412
+      },
+      {
+        "id": "test_054",
+        "question": "Найди товары с максимальной прибылью в каждой категории",
+        "expected": "SELECT p.name, p.category, p.price - p.cost as profit FROM products p WHERE p.price - p.cost = (SELECT MAX(price - cost) FROM products p2 WHERE p2.category = p.category)",
+        "generated": "SELECT T1.category, T1.name, T1.price, T1.cost, T1.revenue, T1.costs FROM products AS T1 INNER JOIN ( SELECT category, MAX(revenue) AS max FROM sales GROUP BY category) AS T2 ON T1.category = T2.category AND T1.price = T2.price AND LIMIT 1000",
+        "correct": false,
+        "similarity": 0.17866004962779156,
+        "time": 21.950258016586304
+      },
+      {
+        "id": "test_055",
+        "question": "Покажи клиентов с растущим трендом заказов по месяцам",
+        "expected": "WITH monthly_orders AS (SELECT c.id, c.name, EXTRACT(MONTH FROM o.order_date) as month, COUNT(*) as order_count FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name, EXTRACT(MONTH FROM o.order_date)) SELECT DISTINCT name FROM monthly_orders mo1 WHERE order_count > (SELECT order_count FROM monthly_orders mo2 WHERE mo2.id = mo1.id AND mo2.month = mo1.month - 1)",
+        "generated": "SELECT T1.name, T1.registration_date, T2.order_date, T2.amount FROM customers AS T1 INNER JOIN orders AS T2 ON T1.id = T2.customer_id WHERE T2.order_date > T1.registration_date ORDER BY T1.name, T2.order_date LIMIT 1000",
+        "correct": false,
+        "similarity": 0.20608108108108109,
+        "time": 21.774418115615845
+      },
+      {
+        "id": "test_056",
+        "question": "Найди товары, которые заказывались только один раз",
+        "expected": "SELECT p.name FROM products p JOIN sales s ON p.id = s.product_id GROUP BY p.id, p.name HAVING COUNT(*) = 1",
+        "generated": "SELECT DISTINCT T1.name FROM products AS T1 INNER JOIN sales AS T2 ON T1.id = T2.product_id GROUP BY T1.name HAVING COUNT(T2.id) = 1 LIMIT 1000",
+        "correct": true,
+        "similarity": 0.7520661157024794,
+        "time": 21.588358163833618
+      },
+      {
+        "id": "test_057",
+        "question": "Покажи средний размер заказа по сегментам клиентов",
+        "expected": "SELECT c.segment, AVG(o.amount) as avg_order_amount FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.segment ORDER BY avg_order_amount DESC",
+        "generated": "SELECT AVG(T2.amount), T1.segment FROM customers AS T1 INNER JOIN orders AS T2 ON T1.id = T2.customer_id GROUP BY T1.segment LIMIT 1000",
+        "correct": true,
+        "similarity": 0.6689895470383276,
+        "time": 20.451029300689697
+      },
+      {
+        "id": "test_058",
+        "question": "Найди клиентов, которые заказывали товары из всех категорий",
+        "expected": "SELECT c.name FROM customers c WHERE (SELECT COUNT(DISTINCT p.category) FROM products p JOIN sales s ON p.id = s.product_id JOIN orders o ON s.order_id = o.id WHERE o.customer_id = c.id) = (SELECT COUNT(DISTINCT category) FROM products)",
+        "generated": "SELECT DISTINCT T1.name FROM customers AS T1 INNER JOIN orders AS T2 ON T1.id = T2.customer_id INNER JOIN products AS T3 ON T2.order_id = T3.id WHERE T3.category = T1.category LIMIT 1000",
+        "correct": false,
+        "similarity": 0.3872549019607843,
+        "time": 20.161106824874878
+      },
+      {
+        "id": "test_059",
+        "question": "Покажи товары с нулевой прибылью",
+        "expected": "SELECT name, price, cost FROM products WHERE price = cost",
+        "generated": "SELECT DISTINCT T1.name FROM products AS T1 INNER JOIN sales AS T2 ON T1.id = T2.product_id WHERE T2.revenue - T2.costs = 0 LIMIT 1000",
+        "correct": false,
+        "similarity": 0.41081081081081083,
+        "time": 19.429687023162842
+      },
+      {
+        "id": "test_060",
+        "question": "Найди заказы с количеством товаров больше среднего",
+        "expected": "SELECT o.id, o.amount, COUNT(s.id) as item_count FROM orders o JOIN sales s ON o.id = s.order_id GROUP BY o.id, o.amount HAVING COUNT(s.id) > (SELECT AVG(item_count) FROM (SELECT COUNT(*) as item_count FROM sales GROUP BY order_id) subq)",
+        "generated": "SELECT id FROM orders WHERE amount > (SELECT AVG(amount) FROM orders) LIMIT 1000",
+        "correct": false,
+        "similarity": 0.40514469453376206,
+        "time": 19.303990125656128
+      },
+      {
+        "id": "test_061",
+        "question": "Покажи клиентов с максимальным количеством заказов в каждом месяце",
+        "expected": "WITH monthly_customers AS (SELECT c.name, EXTRACT(MONTH FROM o.order_date) as month, COUNT(*) as order_count FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name, EXTRACT(MONTH FROM o.order_date)) SELECT name, month, order_count FROM monthly_customers mc1 WHERE order_count = (SELECT MAX(order_count) FROM monthly_customers mc2 WHERE mc2.month = mc1.month)",
+        "generated": "SELECT T1.name, T1.registration_date, T2.month, T2.order_count FROM customers AS T1 INNER JOIN ( SELECT customer_id, DATE_TRUNC('month', order_date) AS month, COUNT(id) AS order_count FROM orders GROUP BY customer_id, month ) AS T2 ON T1.id = LIMIT 1000",
+        "correct": false,
+        "similarity": 0.1024,
+        "time": 20.160629987716675
+      },
+      {
+        "id": "test_062",
+        "question": "Найди товары, которые никогда не продавались",
+        "expected": "SELECT p.name FROM products p LEFT JOIN sales s ON p.id = s.product_id WHERE s.product_id IS NULL",
+        "generated": "SELECT DISTINCT T1.name FROM products AS T1 INNER JOIN sales AS T2 ON T1.id = T2.product_id WHERE T2.id IS NULL LIMIT 1000",
+        "correct": true,
+        "similarity": 0.7348837209302326,
+        "time": 19.965272188186646
+      },
+      {
+        "id": "test_063",
+        "question": "Покажи динамику продаж по неделям",
+        "expected": "SELECT DATE_TRUNC('week', order_date) as week, COUNT(*) as orders_count, SUM(amount) as total_revenue FROM orders GROUP BY DATE_TRUNC('week', order_date) ORDER BY week",
+        "generated": "SELECT DATE_TRUNC('week', sales.order_date) AS week, SUM(sales.revenue) AS revenue FROM sales GROUP BY DATE_TRUNC('week', sales.order_date) ORDER BY DATE_TRUNC('week', sales.order_date) LIMIT 1000",
+        "correct": true,
+        "similarity": 0.6776859504132231,
+        "time": 19.10826802253723
+      },
+      {
+        "id": "test_064",
+        "question": "Найди клиентов с заказами на сумму больше 50000 в этом году",
+        "expected": "SELECT c.name, SUM(o.amount) as total_amount FROM customers c JOIN orders o ON c.id = o.customer_id WHERE EXTRACT(YEAR FROM o.order_date) = EXTRACT(YEAR FROM CURRENT_DATE) GROUP BY c.id, c.name HAVING SUM(o.amount) > 50000 ORDER BY total_amount DESC",
+        "generated": "SELECT DISTINCT T1.name FROM customers AS T1 INNER JOIN orders AS T2 ON T1.id = T2.customer_id WHERE T2.amount > 50000 AND T2.order_date BETWEEN '2019-01-01' AND '2019-12-31' LIMIT 1000",
+        "correct": false,
+        "similarity": 0.4481132075471698,
+        "time": 19.521589994430542
+      },
+      {
+        "id": "test_065",
+        "question": "Покажи товары с остатком меньше 5% от максимального остатка",
+        "expected": "SELECT p.name, i.current_stock FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.current_stock < (SELECT MAX(current_stock) * 0.05 FROM inventory)",
+        "generated": "SELECT T1.name, T2.name, T2.current_stock FROM inventory AS T1 INNER JOIN products AS T2 ON T1.product_id = T2.id WHERE T2.current_stock < 0.05 * (SELECT MAX(T3.current_stock) FROM inventory AS T3 INNER JOIN products AS T4 ON T LIMIT 1000",
+        "correct": false,
+        "similarity": 0.4256410256410256,
+        "time": 19.383656978607178
+      },
+      {
+        "id": "test_066",
+        "question": "Найди заказы с товарами из разных категорий",
+        "expected": "SELECT o.id, COUNT(DISTINCT p.category) as categories_count FROM orders o JOIN sales s ON o.id = s.order_id JOIN products p ON s.product_id = p.id GROUP BY o.id HAVING COUNT(DISTINCT p.category) > 1",
+        "generated": "SELECT DISTINCT T1.order_id FROM orders AS T1 INNER JOIN sales AS T2 ON T1.id = T2.order_id INNER JOIN products AS T3 ON T2.product_id = T3.id WHERE T3.category != T3.category GROUP BY T1.order_id LIMIT 1000",
+        "correct": false,
+        "similarity": 0.178117048346056,
+        "time": 19.12450885772705
+      },
+      {
+        "id": "test_067",
+        "question": "Покажи клиентов с заказами в выходные дни",
+        "expected": "SELECT DISTINCT c.name FROM customers c JOIN orders o ON c.id = o.customer_id WHERE EXTRACT(DOW FROM o.order_date) IN (0, 6)",
+        "generated": "SELECT DISTINCT T1.name FROM customers AS T1 INNER JOIN orders AS T2 ON T1.id = T2.customer_id WHERE T2.order_date IN (SELECT DATE FROM (SELECT DATE_TRUNC('day', order_date) AS DATE FROM orders WHERE DATE_PART('day', order_date - CURRENT_DATE) IN ( LIMIT 1000",
+        "correct": false,
+        "similarity": 0.45382585751978893,
+        "time": 18.983935117721558
+      },
+      {
+        "id": "test_068",
+        "question": "Найди товары с максимальной выручкой в каждой категории",
+        "expected": "SELECT p.name, p.category, SUM(s.revenue) as total_revenue FROM products p JOIN sales s ON p.id = s.product_id GROUP BY p.id, p.name, p.category HAVING SUM(s.revenue) = (SELECT MAX(total_revenue) FROM (SELECT SUM(s2.revenue) as total_revenue FROM products p2 JOIN sales s2 ON p2.id = s2.product_id WHERE p2.category = p.category GROUP BY p2.id) subq)",
+        "generated": "SELECT T1.category, T1.name, T1.price, T1.cost, T1.revenue FROM products AS T1 INNER JOIN ( SELECT category, MAX(revenue) AS max FROM sales INNER JOIN products ON sales.product_id = products.id GROUP BY category ) AS T2 ON T1.category = T2.category AND T1. LIMIT 1000",
+        "correct": false,
+        "similarity": 0.05950413223140496,
+        "time": 19.363214015960693
+      },
+      {
+        "id": "test_069",
+        "question": "Покажи средний чек по дням недели с названиями дней",
+        "expected": "SELECT CASE EXTRACT(DOW FROM order_date) WHEN 0 THEN 'Воскресенье' WHEN 1 THEN 'Понедельник' WHEN 2 THEN 'Вторник' WHEN 3 THEN 'Среда' WHEN 4 THEN 'Четверг' WHEN 5 THEN 'Пятница' WHEN 6 THEN 'Суббота' END as day_name, AVG(amount) as avg_amount FROM orders GROUP BY EXTRACT(DOW FROM order_date) ORDER BY EXTRACT(DOW FROM order_date)",
+        "generated": "SELECT DAYNAME(order_date) AS day, AVG(amount) AS avg_order FROM orders GROUP BY DAYNAME(order_date) LIMIT 1000",
+        "correct": false,
+        "similarity": 0.3936651583710407,
+        "time": 19.14889407157898
+      },
+      {
+        "id": "test_070",
+        "question": "Найди клиентов с заказами в каждый день недели",
+        "expected": "SELECT c.name FROM customers c WHERE (SELECT COUNT(DISTINCT EXTRACT(DOW FROM o.order_date)) FROM orders o WHERE o.customer_id = c.id) = 7",
+        "generated": "SELECT DISTINCT T1.name FROM customers AS T1 INNER JOIN orders AS T2 ON T1.id = T2.customer_id WHERE DATE(T2.order_date) = DATE('2019-01-01') OR DATE(T2.order_date) = DATE('2019-01-08') OR LIMIT 1000",
+        "correct": false,
+        "similarity": 0.39263803680981596,
+        "time": 19.05896806716919
+      },
+      {
+        "id": "test_071",
+        "question": "Покажи товары с остатком больше среднего по складу",
+        "expected": "SELECT p.name, i.warehouse, i.current_stock FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.current_stock > (SELECT AVG(current_stock) FROM inventory i2 WHERE i2.warehouse = i.warehouse) ORDER BY i.warehouse, i.current_stock DESC",
+        "generated": "SELECT T1.name FROM products AS T1 INNER JOIN inventory AS T2 ON T1.id = T2.product_id WHERE T2.current_stock > (SELECT AVG(T3.current_stock) FROM inventory AS T3) LIMIT 1000",
+        "correct": true,
+        "similarity": 0.6356968215158925,
+        "time": 19.22885298728943
+      },
+      {
+        "id": "test_072",
+        "question": "Найди заказы с товарами только из одной категории",
+        "expected": "SELECT o.id, p.category, COUNT(*) as items_count FROM orders o JOIN sales s ON o.id = s.order_id JOIN products p ON s.product_id = p.id GROUP BY o.id, p.category HAVING COUNT(DISTINCT p.category) = 1",
+        "generated": "SELECT DISTINCT T1.order_id FROM orders AS T1 INNER JOIN sales AS T2 ON T1.id = T2.order_id INNER JOIN products AS T3 ON T2.product_id = T3.id WHERE T3.category = 'Shoes' GROUP BY T1.order_id HAVING COUNT(T3.id) LIMIT 1000",
+        "correct": false,
+        "similarity": 0.18581907090464547,
+        "time": 19.30578303337097
+      },
+      {
+        "id": "test_073",
+        "question": "Покажи клиентов с максимальным количеством заказов в каждом квартале",
+        "expected": "WITH quarterly_customers AS (SELECT c.name, EXTRACT(QUARTER FROM o.order_date) as quarter, COUNT(*) as order_count FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name, EXTRACT(QUARTER FROM o.order_date)) SELECT name, quarter, order_count FROM quarterly_customers qc1 WHERE order_count = (SELECT MAX(order_count) FROM quarterly_customers qc2 WHERE qc2.quarter = qc1.quarter)",
+        "generated": "SELECT T1.name, T1.registration_date, T2.quarter, T2.order_count FROM customers AS T1 INNER JOIN ( SELECT customer_id, DATE_PART('year', order_date) AS year, DATE_PART('quarter', order_date) AS quarter, COUNT(id) AS order_count FROM orders GROUP BY customer_ LIMIT 1000",
+        "correct": false,
+        "similarity": 0.1059001512859304,
+        "time": 19.917803049087524
+      },
+      {
+        "id": "test_074",
+        "question": "Найди товары с прибылью больше 1000 рублей",
+        "expected": "SELECT name, price, cost, price - cost as profit FROM products WHERE price - cost > 1000 ORDER BY profit DESC",
+        "generated": "SELECT T1.name FROM products AS T1 INNER JOIN sales AS T2 ON T1.id = T2.product_id WHERE T2.revenue > 1000 LIMIT 1000",
+        "correct": false,
+        "similarity": 0.39090909090909093,
+        "time": 19.37268304824829
+      },
+      {
+        "id": "test_075",
+        "question": "Покажи динамику заказов по часам в рабочие дни",
+        "expected": "SELECT EXTRACT(HOUR FROM order_date) as hour, COUNT(*) as orders_count FROM orders WHERE EXTRACT(DOW FROM order_date) BETWEEN 1 AND 5 GROUP BY EXTRACT(HOUR FROM order_date) ORDER BY hour",
+        "generated": "SELECT DATE_PART('hour', order_date) AS hour, COUNT(id) AS orders FROM orders WHERE DATE_PART('dow', order_date) BETWEEN 1 AND 5 GROUP BY DATE_PART('hour', order_date) LIMIT 1000",
+        "correct": true,
+        "similarity": 0.7692307692307693,
+        "time": 19.483975887298584
+      },
+      {
+        "id": "test_076",
+        "question": "Найди клиентов с заказами в каждый месяц последнего года",
+        "expected": "SELECT c.name FROM customers c WHERE (SELECT COUNT(DISTINCT EXTRACT(MONTH FROM o.order_date)) FROM orders o WHERE o.customer_id = c.id AND o.order_date >= CURRENT_DATE - INTERVAL '1 year') = 12",
+        "generated": "SELECT T1.name FROM customers AS T1 INNER JOIN orders AS T2 ON T1.id = T2.customer_id WHERE T2.order_date BETWEEN '2019-01-01' AND '2019-12-31' GROUP BY T1.name LIMIT 1000",
+        "correct": false,
+        "similarity": 0.4438202247191011,
+        "time": 19.33375906944275
+      },
+      {
+        "id": "test_077",
+        "question": "Покажи товары с максимальным остатком на каждом складе",
+        "expected": "SELECT p.name, i.warehouse, i.current_stock FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.current_stock = (SELECT MAX(current_stock) FROM inventory i2 WHERE i2.warehouse = i.warehouse) ORDER BY i.warehouse, i.current_stock DESC",
+        "generated": "SELECT T1.name, T1.warehouse FROM inventory AS T1 INNER JOIN ( SELECT T2.warehouse, MAX(T2.current_stock) AS max FROM inventory AS T2 GROUP BY T2.warehouse ) AS T3 ON T1.current_stock = T3.max AND T1.warehouse = T3.warehouse ORDER LIMIT 1000",
+        "correct": false,
+        "similarity": 0.1092436974789916,
+        "time": 19.248146057128906
+      },
+      {
+        "id": "test_078",
+        "question": "Найди заказы с товарами из всех доступных категорий",
+        "expected": "SELECT o.id FROM orders o WHERE (SELECT COUNT(DISTINCT p.category) FROM sales s JOIN products p ON s.product_id = p.id WHERE s.order_id = o.id) = (SELECT COUNT(DISTINCT category) FROM products)",
+        "generated": "SELECT DISTINCT T1.order_id FROM orders AS T1 INNER JOIN sales AS T2 ON T1.id = T2.order_id INNER JOIN products AS T3 ON T2.product_id = T3.id WHERE T3.category IN (SELECT DISTINCT category FROM products) LIMIT 1000",
+        "correct": false,
+        "similarity": 0.20603015075376885,
+        "time": 19.151737928390503
+      },
+      {
+        "id": "test_079",
+        "question": "Покажи клиентов с растущей выручкой по месяцам",
+        "expected": "WITH monthly_revenue AS (SELECT c.id, c.name, EXTRACT(MONTH FROM o.order_date) as month, SUM(o.amount) as revenue FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name, EXTRACT(MONTH FROM o.order_date)) SELECT DISTINCT name FROM monthly_revenue mr1 WHERE revenue > (SELECT revenue FROM monthly_revenue mr2 WHERE mr2.id = mr1.id AND mr2.month = mr1.month - 1)",
+        "generated": "SELECT T1.name, T1.registration_date, T2.month, SUM(T3.revenue) AS revenue FROM customers AS T1 INNER JOIN orders AS T2 ON T1.id = T2.customer_id INNER JOIN sales AS T3 ON T2.id = T3.order_id WHERE T1.registration_date IS LIMIT 1000",
+        "correct": false,
+        "similarity": 0.22628951747088186,
+        "time": 19.4946711063385
+      },
+      {
+        "id": "test_080",
+        "question": "Найди товары, которые заказывались в каждом месяце",
+        "expected": "SELECT p.name FROM products p WHERE (SELECT COUNT(DISTINCT EXTRACT(MONTH FROM o.order_date)) FROM sales s JOIN orders o ON s.order_id = o.id WHERE s.product_id = p.id) = 12",
+        "generated": "SELECT DISTINCT T1.name FROM products AS T1 INNER JOIN sales AS T2 ON T1.id = T2.product_id GROUP BY T1.name, T2.order_date, T2.order_date % 30 LIMIT 1000",
+        "correct": false,
+        "similarity": 0.3522012578616352,
+        "time": 20.017796277999878
+      },
+      {
+        "id": "test_081",
+        "question": "Покажи средний размер заказа по статусам с процентом от общего",
+        "expected": "SELECT status, AVG(amount) as avg_amount, COUNT(*) as order_count, ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM orders), 2) as percentage FROM orders GROUP BY status ORDER BY avg_amount DESC",
+        "generated": "SELECT SUM(amount) / COUNT(status), status FROM orders GROUP BY status LIMIT 1000",
+        "correct": false,
+        "similarity": 0.4835164835164835,
+        "time": 25.82398796081543
+      },
+      {
+        "id": "test_082",
+        "question": "Найди клиентов с заказами в каждый день месяца",
+        "expected": "SELECT c.name FROM customers c WHERE (SELECT COUNT(DISTINCT EXTRACT(DAY FROM o.order_date)) FROM orders o WHERE o.customer_id = c.id AND EXTRACT(MONTH FROM o.order_date) = EXTRACT(MONTH FROM CURRENT_DATE)) = EXTRACT(DAY FROM DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month' - INTERVAL '1 day')",
+        "generated": "SELECT DISTINCT T1.name FROM customers AS T1 INNER JOIN orders AS T2 ON T1.id = T2.customer_id WHERE DATE(T2.order_date) = DATE('2019-01-01') LIMIT 1000",
+        "correct": false,
+        "similarity": 0.3945578231292517,
+        "time": 32.479323863983154
+      },
+      {
+        "id": "test_083",
+        "question": "Покажи товары с остатком меньше 10% от максимального в категории",
+        "expected": "SELECT p.name, p.category, i.current_stock FROM products p JOIN inventory i ON p.id = i.product_id WHERE i.current_stock < (SELECT MAX(i2.current_stock) * 0.1 FROM inventory i2 JOIN products p2 ON i2.product_id = p2.id WHERE p2.category = p.category)",
+        "generated": "SELECT T1.name FROM products AS T1 INNER JOIN inventory AS T2 ON T1.id = T2.product_id WHERE T2.warehouse = 'Moscow' AND T1.category = 'Food' AND T2.current_stock < T2.current_stock * 0.1 * T1.price LIMIT 1000",
+        "correct": false,
+        "similarity": 0.22121896162528218,
+        "time": 36.50686001777649
+      },
+      {
+        "id": "test_084",
+        "question": "Найди заказы с товарами из разных складов",
+        "expected": "SELECT o.id, COUNT(DISTINCT i.warehouse) as warehouses_count FROM orders o JOIN sales s ON o.id = s.order_id JOIN inventory i ON s.product_id = i.product_id GROUP BY o.id HAVING COUNT(DISTINCT i.warehouse) > 1",
+        "generated": "SELECT DISTINCT T1.order_id FROM sales AS T1 INNER JOIN inventory AS T2 ON T1.product_id = T2.product_id WHERE T1.status = 'completed' AND T2.warehouse <> T2.warehouse LIMIT 1000",
+        "correct": false,
+        "similarity": 0.4746666666666667,
+        "time": 28.903110027313232
+      },
+      {
+        "id": "test_085",
+        "question": "Покажи клиентов с максимальным количеством заказов в каждом дне недели",
+        "expected": "WITH daily_customers AS (SELECT c.name, EXTRACT(DOW FROM o.order_date) as day_of_week, COUNT(*) as order_count FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name, EXTRACT(DOW FROM o.order_date)) SELECT name, day_of_week, order_count FROM daily_customers dc1 WHERE order_count = (SELECT MAX(order_count) FROM daily_customers dc2 WHERE dc2.day_of_week = dc1.day_of_week)",
+        "generated": "SELECT T1.registration_date, T1.name, T1.email, T1.segment, T2.order_date, T2.customer_id, COUNT(T2.customer_id) AS num_orders FROM customers AS T1 INNER JOIN orders AS T2 ON T1.id = T2.customer_id WHERE T1.registration LIMIT 1000",
+        "correct": false,
+        "similarity": 0.10714285714285714,
+        "time": 19.565500020980835
+      },
+      {
+        "id": "test_086",
+        "question": "Найди товары с прибылью больше средней по категории",
+        "expected": "SELECT p.name, p.category, p.price - p.cost as profit FROM products p WHERE p.price - p.cost > (SELECT AVG(p2.price - p2.cost) FROM products p2 WHERE p2.category = p.category) ORDER BY profit DESC",
+        "generated": "SELECT T1.name FROM products AS T1 INNER JOIN ( SELECT category, AVG(revenue) AS avg_revenue FROM sales INNER JOIN products AS T2 ON T2.id = sales.product_id GROUP BY category ) AS T3 ON T1.category = T3.category WHERE T1.revenue > T3.avg_revenue ORDER LIMIT 1000",
+        "correct": false,
+        "similarity": 0.0801781737193764,
+        "time": 19.473705053329468
+      },
+      {
+        "id": "test_087",
+        "question": "Покажи динамику заказов по дням с трендом",
+        "expected": "SELECT DATE_TRUNC('day', order_date) as day, COUNT(*) as orders_count, LAG(COUNT(*)) OVER (ORDER BY DATE_TRUNC('day', order_date)) as prev_count, COUNT(*) - LAG(COUNT(*)) OVER (ORDER BY DATE_TRUNC('day', order_date)) as trend FROM orders GROUP BY DATE_TRUNC('day', order_date) ORDER BY day",
+        "generated": "SELECT DATE(order_date), SUM(amount) FROM orders WHERE status = 'trend' GROUP BY DATE(order_date) ORDER BY DATE(order_date) LIMIT 1000",
+        "correct": false,
+        "similarity": 0.38004750593824227,
+        "time": 18.988404989242554
+      },
+      {
+        "id": "test_088",
+        "question": "Найди клиентов с заказами в каждый час рабочего дня",
+        "expected": "SELECT c.name FROM customers c WHERE (SELECT COUNT(DISTINCT EXTRACT(HOUR FROM o.order_date)) FROM orders o WHERE o.customer_id = c.id AND EXTRACT(DOW FROM o.order_date) BETWEEN 1 AND 5) = 8",
+        "generated": "SELECT T1.name, T1.registration_date, T2.order_date, T2.status FROM customers AS T1 INNER JOIN orders AS T2 ON T1.id = T2.customer_id WHERE T2.order_date LIKE '2018-01-01 12:00:00' OR T2 LIMIT 1000",
+        "correct": false,
+        "similarity": 0.4105263157894737,
+        "time": 19.293357133865356
+      },
+      {
+        "id": "test_089",
+        "question": "Покажи товары с максимальной выручкой в каждом месяце",
+        "expected": "WITH monthly_products AS (SELECT p.name, EXTRACT(MONTH FROM o.order_date) as month, SUM(s.revenue) as total_revenue FROM products p JOIN sales s ON p.id = s.product_id JOIN orders o ON s.order_id = o.id GROUP BY p.id, p.name, EXTRACT(MONTH FROM o.order_date)) SELECT name, month, total_revenue FROM monthly_products mp1 WHERE total_revenue = (SELECT MAX(total_revenue) FROM monthly_products mp2 WHERE mp2.month = mp1.month)",
+        "generated": "SELECT T2.id, T2.name, T2.category, T2.price, T2.cost, T1.month, T1.revenue FROM ( SELECT T3.id, T3.order_date, T3.month, SUM(T4.revenue) AS revenue FROM ( SELECT T5.order_id, DATE_TR LIMIT 1000",
+        "correct": false,
+        "similarity": 0.33825944170771755,
+        "time": 19.306569814682007
+      },
+      {
+        "id": "test_090",
+        "question": "Найди заказы с товарами только из одного склада",
+        "expected": "SELECT o.id, i.warehouse, COUNT(*) as items_count FROM orders o JOIN sales s ON o.id = s.order_id JOIN inventory i ON s.product_id = i.product_id GROUP BY o.id, i.warehouse HAVING COUNT(DISTINCT i.warehouse) = 1",
+        "generated": "SELECT DISTINCT T1.order_id FROM sales AS T1 INNER JOIN inventory AS T2 ON T1.product_id = T2.product_id WHERE T2.warehouse = 'Moscow' GROUP BY T1.order_id HAVING COUNT(T1.product_id) = 1 LIMIT 1000",
+        "correct": false,
+        "similarity": 0.49370277078085645,
+        "time": 18.912474870681763
+      },
+      {
+        "id": "test_091",
+        "question": "Покажи клиентов с заказами в каждый день года",
+        "expected": "SELECT c.name FROM customers c WHERE (SELECT COUNT(DISTINCT o.order_date) FROM orders o WHERE o.customer_id = c.id AND EXTRACT(YEAR FROM o.order_date) = EXTRACT(YEAR FROM CURRENT_DATE)) = EXTRACT(DOY FROM CURRENT_DATE)",
+        "generated": "SELECT DISTINCT T1.name FROM customers AS T1 INNER JOIN orders AS T2 ON T1.id = T2.customer_id WHERE T2.order_date LIKE '2018-01-%' OR T2.order_date LIKE '2018-02-%' OR T2.order_date LIKE '2018 LIMIT 1000",
+        "correct": false,
+        "similarity": 0.16908212560386474,
+        "time": 18.912885904312134
+      },
+      {
+        "id": "test_092",
+        "question": "Найди товары с остатком больше суммы всех заказов этого товара",
+        "expected": "SELECT p.name, i.current_stock, COALESCE(SUM(s.quantity), 0) as total_ordered FROM products p JOIN inventory i ON p.id = i.product_id LEFT JOIN sales s ON p.id = s.product_id GROUP BY p.id, p.name, i.current_stock HAVING i.current_stock > COALESCE(SUM(s.quantity), 0)",
+        "generated": "SELECT T1.id, T1.name, T1.category, T1.price, T1.cost, SUM(T2.revenue) AS total_revenue FROM products AS T1 INNER JOIN sales AS T2 ON T1.id = T2.product_id GROUP BY T1.id, T1.name, T1.category, T LIMIT 1000",
+        "correct": false,
+        "similarity": 0.24516129032258063,
+        "time": 19.398576021194458
+      },
+      {
+        "id": "test_093",
+        "question": "Покажи средний размер заказа по сегментам с ранжированием",
+        "expected": "SELECT segment, AVG(amount) as avg_amount, RANK() OVER (ORDER BY AVG(amount) DESC) as rank FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY segment ORDER BY avg_amount DESC",
+        "generated": "SELECT AVG(T2.amount) FROM orders AS T1 INNER JOIN customers AS T2 ON T1.customer_id = T2.id GROUP BY T2.segment ORDER BY T2.segment LIMIT 1000",
+        "correct": true,
+        "similarity": 0.5705521472392638,
+        "time": 19.19719672203064
+      },
+      {
+        "id": "test_094",
+        "question": "Найди заказы с товарами из всех доступных складов",
+        "expected": "SELECT o.id FROM orders o WHERE (SELECT COUNT(DISTINCT i.warehouse) FROM sales s JOIN inventory i ON s.product_id = i.product_id WHERE s.order_id = o.id) = (SELECT COUNT(DISTINCT warehouse) FROM inventory)",
+        "generated": "SELECT DISTINCT T1.id AS order_id, T1.customer_id, T1.order_date, T2.name AS product_name, T2.category, T3.warehouse FROM orders AS T1 INNER JOIN sales AS T2 ON T1.id = T2.order_id INNER JOIN inventory AS T3 ON T2. LIMIT 1000",
+        "correct": false,
+        "similarity": 0.10900473933649289,
+        "time": 19.56847906112671
+      },
+      {
+        "id": "test_095",
+        "question": "Покажи клиентов с максимальным количеством заказов в каждом часе",
+        "expected": "WITH hourly_customers AS (SELECT c.name, EXTRACT(HOUR FROM o.order_date) as hour, COUNT(*) as order_count FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name, EXTRACT(HOUR FROM o.order_date)) SELECT name, hour, order_count FROM hourly_customers hc1 WHERE order_count = (SELECT MAX(order_count) FROM hourly_customers hc2 WHERE hc2.hour = hc1.hour)",
+        "generated": "SELECT T1.name, T1.registration_date, T2.name AS \"Most orders in the same hour\" FROM customers AS T1 INNER JOIN ( SELECT customer_id, COUNT(*) AS \"Order count\" FROM orders GROUP BY customer_id, DATE_TRUNC('hour', order_date)) AS T3 ON T1.id = T3. LIMIT 1000",
+        "correct": false,
+        "similarity": 0.1870967741935484,
+        "time": 27.693493127822876
+      },
+      {
+        "id": "test_096",
+        "question": "Найди товары с прибылью в топ 10% по категории",
+        "expected": "SELECT p.name, p.category, p.price - p.cost as profit FROM products p WHERE p.price - p.cost >= (SELECT PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY p2.price - p2.cost) FROM products p2 WHERE p2.category = p.category) ORDER BY p.category, profit DESC",
+        "generated": "SELECT T1.name, T1.category FROM products AS T1 INNER JOIN (SELECT category, SUM(revenue) AS sum FROM sales INNER JOIN products ON sales.product_id = products.id GROUP BY category ORDER BY SUM(revenue) DESC LIMIT 10) AS T2 ON T1.category = T2.category",
+        "correct": false,
+        "similarity": 0.13821138211382114,
+        "time": 27.098400115966797
+      },
+      {
+        "id": "test_097",
+        "question": "Покажи динамику заказов по неделям с процентом изменения",
+        "expected": "WITH weekly_orders AS (SELECT DATE_TRUNC('week', order_date) as week, COUNT(*) as orders_count FROM orders GROUP BY DATE_TRUNC('week', order_date)) SELECT week, orders_count, LAG(orders_count) OVER (ORDER BY week) as prev_count, ROUND((orders_count - LAG(orders_count) OVER (ORDER BY week)) * 100.0 / LAG(orders_count) OVER (ORDER BY week), 2) as percent_change FROM weekly_orders ORDER BY week",
+        "generated": "SELECT TO_CHAR(order_date, 'YYYY-MM'), COUNT(id), LAG(COUNT(id), 1) OVER (ORDER BY TO_CHAR(order_date, 'YYYY-MM')) AS previous_count, (COUNT(id) - LAG(COUNT(id), 1) OVER (ORDER BY TO_CHAR(order_ LIMIT 1000",
+        "correct": false,
+        "similarity": 0.04674457429048414,
+        "time": 19.704795360565186
+      },
+      {
+        "id": "test_098",
+        "question": "Найди клиентов с заказами в каждый день месяца с максимальным количеством дней",
+        "expected": "WITH customer_days AS (SELECT c.name, EXTRACT(MONTH FROM o.order_date) as month, COUNT(DISTINCT EXTRACT(DAY FROM o.order_date)) as days_count FROM customers c JOIN orders o ON c.id = o.customer_id GROUP BY c.id, c.name, EXTRACT(MONTH FROM o.order_date)) SELECT name, month, days_count FROM customer_days cd1 WHERE days_count = (SELECT MAX(days_count) FROM customer_days cd2 WHERE cd2.month = cd1.month)",
+        "generated": "SELECT T1.name, T1.registration_date FROM customers AS T1 INNER JOIN orders AS T2 ON T1.id = T2.customer_id WHERE T2.order_date BETWEEN '2019-01-01' AND '2019-01-31' GROUP BY T1.name, T LIMIT 1000",
+        "correct": false,
+        "similarity": 0.3593220338983051,
+        "time": 20.469280004501343
+      },
+      {
+        "id": "test_099",
+        "question": "Покажи товары с остатком больше суммы всех продаж за последний месяц",
+        "expected": "SELECT p.name, i.current_stock, COALESCE(SUM(s.quantity), 0) as sold_last_month FROM products p JOIN inventory i ON p.id = i.product_id LEFT JOIN sales s ON p.id = s.product_id LEFT JOIN orders o ON s.order_id = o.id AND o.order_date >= CURRENT_DATE - INTERVAL '1 month' GROUP BY p.id, p.name, i.current_stock HAVING i.current_stock > COALESCE(SUM(s.quantity), 0)",
+        "generated": "SELECT T1.name FROM products AS T1 INNER JOIN sales AS T2 ON T1.id = T2.product_id WHERE T2.revenue > T1.current_stock AND T2.order_date > DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month') GROUP BY T1.name LIMIT 1000",
+        "correct": false,
+        "similarity": 0.07746478873239436,
+        "time": 20.272527933120728
+      },
+      {
+        "id": "test_100",
+        "question": "Найди заказы с товарами из всех категорий и всех складов",
+        "expected": "SELECT o.id FROM orders o WHERE (SELECT COUNT(DISTINCT p.category) FROM sales s JOIN products p ON s.product_id = p.id WHERE s.order_id = o.id) = (SELECT COUNT(DISTINCT category) FROM products) AND (SELECT COUNT(DISTINCT i.warehouse) FROM sales s JOIN inventory i ON s.product_id = i.product_id WHERE s.order_id = o.id) = (SELECT COUNT(DISTINCT warehouse) FROM inventory)",
+        "generated": "SELECT DISTINCT T1.id, T1.order_date, T1.status, T2.id, T2.name, T2.category, T2.warehouse FROM orders AS T1 INNER JOIN sales AS T2 ON T1.id = T2.order_id INNER JOIN products AS T3 ON T2.product_id = T3 LIMIT 1000",
+        "correct": false,
+        "similarity": 0.0880281690140845,
+        "time": 19.85271406173706
+      }
+    ]
+  }
+}
