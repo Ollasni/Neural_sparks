@@ -224,9 +224,10 @@ class FineTunedSQLGenerator:
             if '\n' in sql_part:
                 lines = sql_part.split('\n')
                 # Ищем первую строку которая выглядит как SQL
+                valid_commands = ['SELECT', 'DELETE', 'UPDATE', 'INSERT']
                 for line in lines:
                     line = line.strip()
-                    if line and line.upper().startswith('SELECT'):
+                    if line and any(line.upper().startswith(cmd) for cmd in valid_commands):
                         sql_part = line
                         break
                 else:
@@ -236,9 +237,10 @@ class FineTunedSQLGenerator:
             if sql_part.endswith(';'):
                 sql_part = sql_part[:-1]
             
-            # Проверяем что это валидный SQL
-            if not sql_part.upper().startswith('SELECT'):
-                print(f"⚠️  Сгенерированный текст не содержит SELECT: {sql_part[:50]}...")
+            # Проверяем что это валидный SQL (поддерживаем SELECT, DELETE, UPDATE, INSERT)
+            valid_commands = ['SELECT', 'DELETE', 'UPDATE', 'INSERT']
+            if not any(sql_part.upper().startswith(cmd) for cmd in valid_commands):
+                print(f"⚠️  Сгенерированный текст не содержит валидную SQL команду: {sql_part[:50]}...")
                 return ""
             
             # Проверяем что нет мусора
@@ -248,8 +250,8 @@ class FineTunedSQLGenerator:
                     print(f"⚠️  Обнаружен мусор в SQL: {keyword}")
                     return ""
             
-            # Добавляем LIMIT если его нет
-            if 'LIMIT' not in sql_part.upper():
+            # Добавляем LIMIT только для SELECT запросов
+            if sql_part.upper().startswith('SELECT') and 'LIMIT' not in sql_part.upper():
                 sql_part += ' LIMIT 1000'
             
             return sql_part
@@ -317,9 +319,10 @@ SQL:"""
             if '\n' in sql_part:
                 sql_part = sql_part.split('\n')[0].strip()
             
-            # Проверяем что это валидный SQL
-            if not sql_part.upper().startswith('SELECT'):
-                print(f"⚠️  Сгенерированный текст не содержит SELECT: {sql_part[:100]}...")
+            # Проверяем что это валидный SQL (поддерживаем SELECT, DELETE, UPDATE, INSERT)
+            valid_commands = ['SELECT', 'DELETE', 'UPDATE', 'INSERT']
+            if not any(sql_part.upper().startswith(cmd) for cmd in valid_commands):
+                print(f"⚠️  Сгенерированный текст не содержит валидную SQL команду: {sql_part[:100]}...")
                 return ""
             
             # Проверяем что нет мусора
@@ -329,8 +332,8 @@ SQL:"""
                     print(f"⚠️  Обнаружен мусор в SQL: {keyword}")
                     return ""
             
-            # Добавляем LIMIT если его нет
-            if 'LIMIT' not in sql_part.upper():
+            # Добавляем LIMIT только для SELECT запросов
+            if sql_part.upper().startswith('SELECT') and 'LIMIT' not in sql_part.upper():
                 sql_part += ' LIMIT 1000'
             
             return sql_part

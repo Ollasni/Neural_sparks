@@ -113,6 +113,102 @@ def display_metrics_dashboard(agent):
             delta=None
         )
 
+def detect_dangerous_sql_commands(sql_query: str) -> dict:
+    """Обнаруживает опасные SQL команды и возвращает информацию о них"""
+    if not sql_query:
+        return {"is_dangerous": False, "danger_type": None, "danger_level": None}
+    
+    query_upper = sql_query.strip().upper()
+    
+    # Определяем опасные команды
+    dangerous_commands = {
+        'DELETE': {'level': 'critical', 'icon': '🗑️', 'description': 'Удаление данных'},
+        'DROP': {'level': 'critical', 'icon': '💥', 'description': 'Удаление объектов БД'},
+        'TRUNCATE': {'level': 'critical', 'icon': '🧹', 'description': 'Полная очистка таблицы'},
+        'ALTER': {'level': 'high', 'icon': '🔧', 'description': 'Изменение структуры БД'},
+        'UPDATE': {'level': 'high', 'icon': '✏️', 'description': 'Изменение данных'},
+        'INSERT': {'level': 'medium', 'icon': '➕', 'description': 'Добавление данных'}
+    }
+    
+    for command, info in dangerous_commands.items():
+        if query_upper.startswith(command):
+            return {
+                "is_dangerous": True,
+                "danger_type": command,
+                "danger_level": info['level'],
+                "icon": info['icon'],
+                "description": info['description']
+            }
+    
+    return {"is_dangerous": False, "danger_type": None, "danger_level": None}
+
+def display_dangerous_command_warning(danger_info: dict, sql_query: str):
+    """Отображает предупреждение об опасной команде"""
+    if not danger_info.get("is_dangerous"):
+        return False
+    
+    danger_type = danger_info["danger_type"]
+    danger_level = danger_info["danger_level"]
+    icon = danger_info["icon"]
+    description = danger_info["description"]
+    
+    # Определяем цвет в зависимости от уровня опасности
+    if danger_level == 'critical':
+        bg_color = "#dc354520"
+        border_color = "#dc3545"
+        text_color = "#dc3545"
+        animation = "pulse"
+    elif danger_level == 'high':
+        bg_color = "#fd7e1420"
+        border_color = "#fd7e14"
+        text_color = "#fd7e14"
+        animation = "none"
+    else:
+        bg_color = "#ffc10720"
+        border_color = "#ffc107"
+        text_color = "#856404"
+        animation = "none"
+    
+    # Отображаем большое предупреждение
+    st.markdown(f"""
+    <div style="background-color: {bg_color}; border: 3px solid {border_color}; padding: 20px; margin: 15px 0; border-radius: 10px; animation: {animation} 2s infinite;">
+        <h2 style="margin: 0; color: {text_color}; text-align: center; font-size: 1.8rem;">
+            {icon} ОПАСНАЯ ОПЕРАЦИЯ: {danger_type}
+        </h2>
+        <p style="margin: 10px 0 0 0; color: {text_color}; text-align: center; font-weight: bold; font-size: 1.2rem;">
+            {description}
+        </p>
+    </div>
+    <style>
+    @keyframes pulse {{
+        0% {{ opacity: 1; transform: scale(1); }}
+        50% {{ opacity: 0.8; transform: scale(1.02); }}
+        100% {{ opacity: 1; transform: scale(1); }}
+    }}
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Показываем SQL запрос в специальном блоке
+    st.markdown("**Выполняемый SQL запрос:**")
+    st.code(sql_query, language='sql')
+    
+    # Добавляем дополнительные предупреждения
+    if danger_level == 'critical':
+        st.error("🚨 **КРИТИЧЕСКОЕ ПРЕДУПРЕЖДЕНИЕ**: Эта операция может привести к необратимой потере данных!")
+        
+        if danger_type == 'DELETE':
+            st.warning("⚠️ **ВНИМАНИЕ**: Операция DELETE удалит данные из таблицы. Убедитесь, что это именно то, что вы хотите сделать.")
+        elif danger_type == 'DROP':
+            st.warning("⚠️ **ВНИМАНИЕ**: Операция DROP полностью удалит объект из базы данных (таблицу, индекс, и т.д.).")
+        elif danger_type == 'TRUNCATE':
+            st.warning("⚠️ **ВНИМАНИЕ**: Операция TRUNCATE полностью очистит таблицу от всех данных.")
+    
+    elif danger_level == 'high':
+        st.warning("⚠️ **ВНИМАНИЕ**: Эта операция изменит данные или структуру базы данных.")
+    
+    # Возвращаем True, если это критическая операция
+    return danger_level == 'critical'
+
 def display_risk_analysis(risk_analysis):
     """Отображает анализ риска SQL запроса"""
     if not risk_analysis:
@@ -124,6 +220,14 @@ def display_risk_analysis(risk_analysis):
     risk_icon = "❓"
     risk_color = "#6c757d"
     risk_text = "Неизвестно"
+    
+    # Проверяем тип команды (используем новую функцию)
+    is_delete_command = False
+    is_update_command = False
+    if hasattr(risk_analysis, 'query') and risk_analysis.query:
+        query_upper = risk_analysis.query.strip().upper()
+        is_delete_command = query_upper.startswith('DELETE')
+        is_update_command = query_upper.startswith('UPDATE')
     
     if hasattr(risk_analysis, 'risk_level'):
         risk_level = risk_analysis.risk_level
@@ -144,14 +248,54 @@ def display_risk_analysis(risk_analysis):
             risk_color = "#dc3545"
             risk_text = "Критический риск"
     
-    # Отображаем уровень риска
-    st.markdown(f"""
-    <div style="background-color: {risk_color}20; border-left: 4px solid {risk_color}; padding: 10px; margin: 10px 0; border-radius: 4px;">
-        <h4 style="margin: 0; color: {risk_color};">
-            {risk_icon} Уровень риска: {risk_text}
-        </h4>
-    </div>
-    """, unsafe_allow_html=True)
+    # Специальное отображение для DELETE команд
+    if is_delete_command:
+        st.markdown(f"""
+        <div style="background-color: #dc354520; border: 2px solid #dc3545; padding: 15px; margin: 10px 0; border-radius: 8px; animation: pulse 2s infinite;">
+            <h3 style="margin: 0; color: #dc3545; text-align: center;">
+                🗑️ ОПАСНАЯ ОПЕРАЦИЯ: DELETE
+            </h3>
+            <p style="margin: 5px 0 0 0; color: #dc3545; text-align: center; font-weight: bold;">
+                {risk_icon} Уровень угрозы: {risk_text}
+            </p>
+        </div>
+        <style>
+        @keyframes pulse {{
+            0% {{ opacity: 1; }}
+            50% {{ opacity: 0.7; }}
+            100% {{ opacity: 1; }}
+        }}
+        </style>
+        """, unsafe_allow_html=True)
+        
+        # Дополнительное предупреждение для DELETE
+        st.warning("⚠️ **ВНИМАНИЕ**: Выполняется операция удаления данных! Убедитесь, что это именно то, что вы хотите сделать.")
+        
+    elif is_update_command:
+        # Специальное отображение для UPDATE команд
+        st.markdown(f"""
+        <div style="background-color: #fd7e1420; border: 2px solid #fd7e14; padding: 15px; margin: 10px 0; border-radius: 8px;">
+            <h3 style="margin: 0; color: #fd7e14; text-align: center;">
+                ✏️ МОДИФИЦИРУЮЩАЯ ОПЕРАЦИЯ: UPDATE
+            </h3>
+            <p style="margin: 5px 0 0 0; color: #fd7e14; text-align: center; font-weight: bold;">
+                {risk_icon} Уровень угрозы: {risk_text}
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Дополнительное предупреждение для UPDATE
+        st.warning("⚠️ **ВНИМАНИЕ**: Выполняется операция изменения данных! Убедитесь, что изменения корректны.")
+        
+    else:
+        # Обычное отображение для других команд
+        st.markdown(f"""
+        <div style="background-color: {risk_color}20; border-left: 4px solid {risk_color}; padding: 10px; margin: 10px 0; border-radius: 4px;">
+            <h4 style="margin: 0; color: {risk_color};">
+                {risk_icon} Уровень риска: {risk_text}
+            </h4>
+        </div>
+        """, unsafe_allow_html=True)
     
     # Показываем детали анализа
     if hasattr(risk_analysis, 'warnings') and risk_analysis.warnings:

@@ -444,6 +444,43 @@ def render_natural_language_query():
                     if st.session_state.get('enable_validation', True) and result.get('risk_analysis'):
                         risk_analysis = result['risk_analysis']
                         
+                        # Проверяем тип команды для специального отображения
+                        is_delete_command = False
+                        is_update_command = False
+                        if hasattr(risk_analysis, 'query') and risk_analysis.query:
+                            query_upper = risk_analysis.query.strip().upper()
+                            is_delete_command = query_upper.startswith('DELETE')
+                            is_update_command = query_upper.startswith('UPDATE')
+                        
+                        # Специальное отображение для DELETE команд
+                        if is_delete_command:
+                            st.markdown("""
+                            <div style="background-color: #dc354520; border: 2px solid #dc3545; padding: 15px; margin: 10px 0; border-radius: 8px; animation: pulse 2s infinite;">
+                                <h3 style="margin: 0; color: #dc3545; text-align: center;">
+                                    🗑️ ОПАСНАЯ ОПЕРАЦИЯ: DELETE
+                                </h3>
+                            </div>
+                            <style>
+                            @keyframes pulse {
+                                0% { opacity: 1; }
+                                50% { opacity: 0.7; }
+                                100% { opacity: 1; }
+                            }
+                            </style>
+                            """, unsafe_allow_html=True)
+                            st.warning("⚠️ **ВНИМАНИЕ**: Выполняется операция удаления данных!")
+                        
+                        # Специальное отображение для UPDATE команд
+                        elif is_update_command:
+                            st.markdown("""
+                            <div style="background-color: #fd7e1420; border: 2px solid #fd7e14; padding: 15px; margin: 10px 0; border-radius: 8px;">
+                                <h3 style="margin: 0; color: #fd7e14; text-align: center;">
+                                    ✏️ МОДИФИЦИРУЮЩАЯ ОПЕРАЦИЯ: UPDATE
+                                </h3>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            st.warning("⚠️ **ВНИМАНИЕ**: Выполняется операция изменения данных!")
+                        
                         # Цветовая индикация риска
                         risk_colors = {
                             'low': '🟢',
