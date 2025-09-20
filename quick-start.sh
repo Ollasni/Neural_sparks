@@ -52,3 +52,4 @@ echo "⏹️  Для остановки нажмите Ctrl+C"
 
 # Запускаем приложение
 python launch_app.py --model integrated --port 8501
+

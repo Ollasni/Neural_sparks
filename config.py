@@ -114,6 +114,26 @@ class Settings(BaseSettings):
     # =============================================================================
     database_url: str = Field("postgresql://olgasnissarenko@localhost:5432/bi_demo", env="DATABASE_URL")
     
+    # Детальные настройки базы данных для поддержки удаленных БД
+    db_host: str = Field("localhost", env="DB_HOST")
+    db_port: int = Field(5432, env="DB_PORT")
+    db_name: str = Field("bi_demo", env="DB_NAME")
+    db_user: str = Field("olgasnissarenko", env="DB_USER")
+    db_password: Optional[SecretStr] = Field(None, env="DB_PASSWORD")
+    db_sslmode: str = Field("disable", env="DB_SSLMODE")  # disable, require, prefer, allow
+    db_sslcert: Optional[str] = Field(None, env="DB_SSLCERT")
+    db_sslkey: Optional[str] = Field(None, env="DB_SSLKEY")
+    db_sslrootcert: Optional[str] = Field(None, env="DB_SSLROOTCERT")
+    
+    # Настройки для удаленной БД (Neon)
+    use_remote_db: bool = Field(False, env="USE_REMOTE_DB")
+    remote_db_host: str = Field("ep-young-tree-agad2ram-pooler.c-2.eu-central-1.aws.neon.tech", env="REMOTE_DB_HOST")
+    remote_db_port: int = Field(5432, env="REMOTE_DB_PORT")
+    remote_db_name: str = Field("neondb", env="REMOTE_DB_NAME")
+    remote_db_user: str = Field("neondb_owner", env="REMOTE_DB_USER")
+    remote_db_password: Optional[SecretStr] = Field(None, env="REMOTE_DB_PASSWORD")
+    remote_db_sslmode: str = Field("require", env="REMOTE_DB_SSLMODE")
+    
     # =============================================================================
     # Security Configuration
     # =============================================================================
@@ -183,6 +203,20 @@ class Settings(BaseSettings):
     def validate_base_url(cls, v):
         if not v.startswith(('http://', 'https://')):
             raise ValueError('Base URL must start with http:// or https://')
+        return v
+    
+    @validator('db_sslmode')
+    def validate_sslmode(cls, v):
+        valid_modes = ['disable', 'allow', 'prefer', 'require', 'verify-ca', 'verify-full']
+        if v not in valid_modes:
+            raise ValueError(f'SSL mode must be one of: {", ".join(valid_modes)}')
+        return v
+    
+    @validator('remote_db_sslmode')
+    def validate_remote_sslmode(cls, v):
+        valid_modes = ['disable', 'allow', 'prefer', 'require', 'verify-ca', 'verify-full']
+        if v not in valid_modes:
+            raise ValueError(f'Remote SSL mode must be one of: {", ".join(valid_modes)}')
         return v
     
     # =============================================================================
@@ -298,6 +332,83 @@ class Settings(BaseSettings):
                 'provider': 'local'
             }
     
+    def get_database_config(self) -> Dict[str, Any]:
+        """Возвращает конфигурацию базы данных"""
+        if self.use_remote_db:
+            return {
+                'host': self.remote_db_host,
+                'port': self.remote_db_port,
+                'database': self.remote_db_name,
+                'user': self.remote_db_user,
+                'password': self.remote_db_password.get_secret_value() if self.remote_db_password else None,
+                'sslmode': self.remote_db_sslmode,
+                'is_remote': True
+            }
+        else:
+            return {
+                'host': self.db_host,
+                'port': self.db_port,
+                'database': self.db_name,
+                'user': self.db_user,
+                'password': self.db_password.get_secret_value() if self.db_password else None,
+                'sslmode': self.db_sslmode,
+                'sslcert': self.db_sslcert,
+                'sslkey': self.db_sslkey,
+                'sslrootcert': self.db_sslrootcert,
+                'is_remote': False
+            }
+    
+    def get_database_url(self) -> str:
+        """Возвращает URL базы данных"""
+        if self.use_remote_db:
+            return self._build_database_url(
+                host=self.remote_db_host,
+                port=self.remote_db_port,
+                database=self.remote_db_name,
+                user=self.remote_db_user,
+                password=self.remote_db_password.get_secret_value() if self.remote_db_password else None,
+                sslmode=self.remote_db_sslmode
+            )
+        else:
+            return self._build_database_url(
+                host=self.db_host,
+                port=self.db_port,
+                database=self.db_name,
+                user=self.db_user,
+                password=self.db_password.get_secret_value() if self.db_password else None,
+                sslmode=self.db_sslmode,
+                sslcert=self.db_sslcert,
+                sslkey=self.db_sslkey,
+                sslrootcert=self.db_sslrootcert
+            )
+    
+    def _build_database_url(self, host: str, port: int, database: str, user: str, 
+                           password: Optional[str] = None, sslmode: str = "disable",
+                           sslcert: Optional[str] = None, sslkey: Optional[str] = None,
+                           sslrootcert: Optional[str] = None) -> str:
+        """Строит URL базы данных с SSL параметрами"""
+        # Базовый URL
+        if password:
+            url = f"postgresql://{user}:{password}@{host}:{port}/{database}"
+        else:
+            url = f"postgresql://{user}@{host}:{port}/{database}"
+        
+        # Добавляем SSL параметры
+        ssl_params = []
+        if sslmode and sslmode != "disable":
+            ssl_params.append(f"sslmode={sslmode}")
+        if sslcert:
+            ssl_params.append(f"sslcert={sslcert}")
+        if sslkey:
+            ssl_params.append(f"sslkey={sslkey}")
+        if sslrootcert:
+            ssl_params.append(f"sslrootcert={sslrootcert}")
+        
+        if ssl_params:
+            url += "?" + "&".join(ssl_params)
+        
+        return url
+    
     # =============================================================================
     # Configuration
     # =============================================================================
@@ -390,7 +501,27 @@ LOCAL_API_KEY=your_local_api_key_here
 LOCAL_BASE_URL=https://your_model_server.com/v1
 MODEL_PROVIDER=local
 
-# Database
+# Database Configuration
+# Choose between local or remote database
+USE_REMOTE_DB=false
+
+# Local Database Settings
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=bi_demo
+DB_USER=olgasnissarenko
+DB_PASSWORD=your_local_password
+DB_SSLMODE=disable
+
+# Remote Database Settings (Neon)
+REMOTE_DB_HOST=ep-young-tree-agad2ram-pooler.c-2.eu-central-1.aws.neon.tech
+REMOTE_DB_PORT=5432
+REMOTE_DB_NAME=neondb
+REMOTE_DB_USER=neondb_owner
+REMOTE_DB_PASSWORD=npg_TrW8nyL4CItx
+REMOTE_DB_SSLMODE=require
+
+# Legacy database URL (will be overridden by individual settings above)
 DATABASE_URL=postgresql://olgasnissarenko@localhost:5432/bi_demo
 
 # Security

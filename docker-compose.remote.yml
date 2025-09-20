@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  # Основное приложение BI-GPT Agent с удаленной БД
+  app:
+    build: .
+    container_name: bi_gpt_app_remote
+    ports:
+      - "8501:8501"  # Streamlit
+      - "8000:8000"  # FastAPI (если используется)
+    environment:
+      # Database Configuration - Remote Database
+      USE_REMOTE_DB: true
+      
+      # Remote Database Settings (Neon)
+      REMOTE_DB_HOST: ep-young-tree-agad2ram-pooler.c-2.eu-central-1.aws.neon.tech
+      REMOTE_DB_PORT: 5432
+      REMOTE_DB_NAME: neondb
+      REMOTE_DB_USER: neondb_owner
+      REMOTE_DB_PASSWORD: npg_TrW8nyL4CItx
+      REMOTE_DB_SSLMODE: require
+      
+      # Legacy database URL (for backward compatibility)
+      DATABASE_URL: postgresql://neondb_owner:npg_TrW8nyL4CItx@ep-young-tree-agad2ram-pooler.c-2.eu-central-1.aws.neon.tech:5432/neondb?sslmode=require
+      
+      # OpenAI API (замените на ваши ключи)
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-your_openai_api_key_here}
+      
+      # Streamlit настройки
+      STREAMLIT_SERVER_PORT: 8501
+      STREAMLIT_SERVER_ADDRESS: 0.0.0.0
+      STREAMLIT_SERVER_HEADLESS: true
+      STREAMLIT_BROWSER_GATHER_USAGE_STATS: false
+      
+      # Python настройки
+      PYTHONPATH: /app
+      PYTHONUNBUFFERED: 1
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+      - ./schema.json:/app/schema.json
+    restart: unless-stopped
+
+  # Redis для кэширования (опционально)
+  redis:
+    image: redis:7-alpine
+    container_name: bi_gpt_redis_remote
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+volumes:
+  redis_data:

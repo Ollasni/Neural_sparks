@@ -31,13 +31,27 @@ services:
       - "8501:8501"  # Streamlit
       - "8000:8000"  # FastAPI (если используется)
     environment:
-      # Database
+      # Database Configuration
+      USE_REMOTE_DB: ${USE_REMOTE_DB:-false}
+      
+      # Local Database (when USE_REMOTE_DB=false)
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: bi_gpt_db
+      DB_USER: bi_gpt_user
+      DB_PASSWORD: bi_gpt_password
+      DB_SSLMODE: disable
+      
+      # Remote Database (when USE_REMOTE_DB=true)
+      REMOTE_DB_HOST: ${REMOTE_DB_HOST:-ep-young-tree-agad2ram-pooler.c-2.eu-central-1.aws.neon.tech}
+      REMOTE_DB_PORT: ${REMOTE_DB_PORT:-5432}
+      REMOTE_DB_NAME: ${REMOTE_DB_NAME:-neondb}
+      REMOTE_DB_USER: ${REMOTE_DB_USER:-neondb_owner}
+      REMOTE_DB_PASSWORD: ${REMOTE_DB_PASSWORD:-npg_TrW8nyL4CItx}
+      REMOTE_DB_SSLMODE: ${REMOTE_DB_SSLMODE:-require}
+      
+      # Legacy database URL (for backward compatibility)
       DATABASE_URL: postgresql://bi_gpt_user:bi_gpt_password@postgres:5432/bi_gpt_db
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
-      POSTGRES_DB: bi_gpt_db
-      POSTGRES_USER: bi_gpt_user
-      POSTGRES_PASSWORD: bi_gpt_password
       
       # OpenAI API (замените на ваши ключи)
       OPENAI_API_KEY: ${OPENAI_API_KEY:-your_openai_api_key_here}
@@ -81,3 +95,4 @@ volumes:
 networks:
   bi_gpt_network:
     driver: bridge
+

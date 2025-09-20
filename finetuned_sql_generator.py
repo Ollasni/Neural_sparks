@@ -36,11 +36,16 @@ class BusinessDictionary:
             
             # Таблицы и поля
             'заказы': 'orders',
-            'клиенты': 'customers', 
+            'клиенты': 'customers',
+            'клиент': 'customer',
+            'пользователи': 'users',
+            'пользователь': 'user',
             'товары': 'products',
             'продажи': 'sales',
             'склад': 'inventory',
-            'сотрудники': 'employees'
+            'сотрудники': 'employees',
+            'цена': 'price',
+            'количество': 'quantity'
         }
         
     def translate_term(self, term: str) -> str:
@@ -61,13 +66,16 @@ class BusinessDictionary:
 class FineTunedSQLGenerator:
     """Генератор SQL запросов с использованием fine-tuned Phi-3 + LoRA модели"""
     
-    def __init__(self, model_path: str = "finetuning/phi3-mini", adapter_path: str = "finetuning/phi3_bird_lora"):
+    def __init__(self, model_path: str = "finetuning/phi3-mini", adapter_path: str = "finetuning/phi3_bird_lora", 
+                 connection_string: str = None, use_dynamic_schema: bool = True):
         """
         Инициализация fine-tuned модели
         
         Args:
             model_path: Путь к базовой модели Phi-3
             adapter_path: Путь к LoRA адаптеру
+            connection_string: Строка подключения к БД
+            use_dynamic_schema: Использовать динамическую схему
         """
         self.model_path = Path(model_path)
         self.adapter_path = Path(adapter_path)
@@ -88,9 +96,44 @@ class FineTunedSQLGenerator:
         # Добавляем business_dict для совместимости с BIGPTAgent
         self.business_dict = BusinessDictionary()
         
+        # Настройка динамической схемы
+        self.use_dynamic_schema = use_dynamic_schema
+        self.dynamic_schema_extractor = None
+        
+        if use_dynamic_schema:
+            try:
+                from dynamic_schema_extractor import create_dynamic_extractor
+                self.dynamic_schema_extractor = create_dynamic_extractor(connection_string)
+                print("   ✅ Dynamic schema extractor initialized")
+            except ImportError as e:
+                print(f"   ⚠️  Cannot import dynamic schema extractor: {e}")
+                self.use_dynamic_schema = False
+            except Exception as e:
+                print(f"   ⚠️  Failed to initialize dynamic schema extractor: {e}")
+                self.use_dynamic_schema = False
+        
     def _load_model(self):
         """Загружает модель и адаптер"""
         try:
+            # Проверяем доступность необходимых библиотек
+            try:
+                import torch
+                print(f"   🔧 PyTorch версия: {torch.__version__}")
+            except ImportError:
+                raise ImportError("PyTorch не установлен. Установите: pip install torch")
+            
+            try:
+                from peft import PeftModel
+                print("   🔧 PEFT доступен")
+            except ImportError:
+                raise ImportError("PEFT не установлен. Установите: pip install peft")
+            
+            try:
+                from transformers import AutoModelForCausalLM, AutoTokenizer
+                print("   🔧 Transformers доступен")
+            except ImportError:
+                raise ImportError("Transformers не установлен. Установите: pip install transformers")
+            
             # Загружаем токенизатор
             print("   📝 Загружаем токенизатор...")
             self.tokenizer = AutoTokenizer.from_pretrained(str(self.model_path), use_fast=True)
@@ -153,28 +196,32 @@ class FineTunedSQLGenerator:
             # Генерируем ответ с улучшенными параметрами
             with torch.no_grad():
                 try:
+                    print(f"🔍 Начинаем генерацию с входными токенами длиной: {inputs['input_ids'].shape[1]}")
+                    
                     outputs = self.model.generate(
                         inputs['input_ids'],
                         attention_mask=inputs.get('attention_mask'),
-                        max_new_tokens=80,  # Уменьшили для предотвращения галлюцинаций
+                        max_new_tokens=40,  # Еще меньше токенов для фокуса на коротком SQL
                         do_sample=False,  # Детерминированная генерация
                         pad_token_id=self.tokenizer.pad_token_id,
                         eos_token_id=self.tokenizer.eos_token_id,
                         use_cache=False,
-                        # Добавляем stop tokens для остановки генерации
-                        early_stopping=True
+                        # Убираем проблемные параметры
+                        num_beams=1,  # Greedy search
+                        repetition_penalty=1.05  # Минимальный penalty
                     )
                 except Exception as cache_error:
                     print(f"⚠️  Ошибка с кэшем, пробуем без attention_mask: {cache_error}")
                     # Fallback без attention_mask
                     outputs = self.model.generate(
                         inputs['input_ids'],
-                        max_new_tokens=80,  # Уменьшили
+                        max_new_tokens=40,  # Соответствует основной генерации
                         do_sample=False,
                         pad_token_id=self.tokenizer.pad_token_id,
                         eos_token_id=self.tokenizer.eos_token_id,
                         use_cache=False,
-                        early_stopping=True
+                        num_beams=1,
+                        repetition_penalty=1.05
                     )
             
             # Декодируем только новые токены (без исходного промпта)
@@ -182,8 +229,12 @@ class FineTunedSQLGenerator:
             new_tokens = outputs[0][input_length:]
             generated_text = self.tokenizer.decode(new_tokens, skip_special_tokens=True)
             
-            # Отладочная информация
-            print(f"📝 Новые токены (без промпта): {generated_text}")
+            # Детальная отладочная информация
+            print(f"🔍 Входных токенов: {input_length}")
+            print(f"🔍 Выходных токенов: {len(outputs[0])}")
+            print(f"🔍 Новых токенов: {len(new_tokens)}")
+            print(f"📝 Новые токены (без промпта): '{generated_text}'")
+            print(f"🔍 Длина сгенерированного текста: {len(generated_text)}")
             
             # Извлекаем только SQL из ответа (теперь без исходного промпта)
             sql_query = self._extract_sql_from_generated(generated_text)
@@ -208,80 +259,212 @@ class FineTunedSQLGenerator:
         try:
             sql_part = generated_text.strip()
             
-            # Останавливаемся на стоп-словах (модель может продолжить генерировать примеры)
-            stop_words = [
-                'Question:', 'SQL:', 'Database:', 'Schema:', 'Answer:', 'Explanation:', 
-                '\n\nQuestion', '\n\nDatabase', '\n\nSchema', '\nQuestion', '\nDatabase',
-                'Question', 'Database'  # Даже без двоеточия
-            ]
+            # Детальная отладка для понимания что генерирует модель
+            print(f"🔍 Отладка: исходный сгенерированный текст (длина {len(sql_part)}): '{sql_part}'")
             
-            for stop_word in stop_words:
+            # Более мягкие стоп-слова - сначала удаляем очевидные разделители
+            primary_stop_words = ['\n\nQuestion', '\n\nDatabase', '\n\nSchema']
+            for stop_word in primary_stop_words:
                 if stop_word in sql_part:
                     sql_part = sql_part.split(stop_word)[0].strip()
+                    print(f"🔍 После удаления '{stop_word}': '{sql_part}'")
                     break
             
-            # Берем только первую строку если есть переносы
+            # Если есть переносы строк, ищем валидный SQL среди строк
             if '\n' in sql_part:
-                lines = sql_part.split('\n')
-                # Ищем первую строку которая выглядит как SQL
-                valid_commands = ['SELECT', 'DELETE', 'UPDATE', 'INSERT']
-                for line in lines:
-                    line = line.strip()
-                    if line and any(line.upper().startswith(cmd) for cmd in valid_commands):
-                        sql_part = line
+                lines = [line.strip() for line in sql_part.split('\n') if line.strip()]
+                print(f"🔍 Найдены строки: {lines}")
+                
+                valid_commands = ['SELECT', 'DELETE', 'UPDATE', 'INSERT', 'WITH']
+                
+                # Ищем первую строку которая начинается с SQL команды
+                sql_start_index = -1
+                for i, line in enumerate(lines):
+                    if any(line.upper().startswith(cmd) for cmd in valid_commands):
+                        sql_start_index = i
+                        print(f"🔍 Найдена SQL строка на позиции {i}: '{line}'")
                         break
+                
+                if sql_start_index >= 0:
+                    # Склеиваем SQL строки начиная с найденной
+                    sql_lines = []
+                    for i in range(sql_start_index, len(lines)):
+                        line = lines[i]
+                        # Останавливаемся если встретили очевидно не SQL строку
+                        if any(stop in line for stop in ['Question:', 'Database:', 'Schema:']):
+                            break
+                        sql_lines.append(line)
+                    
+                    sql_part = ' '.join(sql_lines)
+                    print(f"🔍 Склеенный SQL: '{sql_part}'")
                 else:
-                    sql_part = lines[0].strip()
+                    # Если не нашли очевидного SQL, берем первую непустую строку
+                    sql_part = lines[0] if lines else sql_part
+                    print(f"🔍 Взята первая строка: '{sql_part}'")
             
             # Убираем точку с запятой в конце
             if sql_part.endswith(';'):
                 sql_part = sql_part[:-1]
+                print(f"🔍 После удаления ';': '{sql_part}'")
             
-            # Проверяем что это валидный SQL (поддерживаем SELECT, DELETE, UPDATE, INSERT)
-            valid_commands = ['SELECT', 'DELETE', 'UPDATE', 'INSERT']
-            if not any(sql_part.upper().startswith(cmd) for cmd in valid_commands):
-                print(f"⚠️  Сгенерированный текст не содержит валидную SQL команду: {sql_part[:50]}...")
-                return ""
+            # Проверяем наличие SQL ключевых слов (более мягкая проверка)
+            sql_keywords = ['SELECT', 'DELETE', 'UPDATE', 'INSERT', 'WITH', 'FROM', 'WHERE', 'ORDER', 'GROUP']
+            has_sql_keywords = any(keyword.upper() in sql_part.upper() for keyword in sql_keywords)
             
-            # Проверяем что нет мусора
-            invalid_keywords = ['Question', 'Database', 'Schema', 'Answer', 'Explanation']
-            for keyword in invalid_keywords:
-                if keyword in sql_part:
-                    print(f"⚠️  Обнаружен мусор в SQL: {keyword}")
+            if not has_sql_keywords:
+                print(f"⚠️  Текст не содержит SQL ключевых слов: {sql_part[:100]}...")
+                
+                # Попробуем найти что-то похожее на SQL в исходном тексте
+                original_lines = [line.strip() for line in generated_text.split('\n') if line.strip()]
+                for line in original_lines:
+                    if any(keyword.upper() in line.upper() for keyword in sql_keywords):
+                        print(f"🔍 Найдена альтернативная SQL строка: '{line}'")
+                        sql_part = line
+                        if sql_part.endswith(';'):
+                            sql_part = sql_part[:-1]
+                        break
+                else:
+                    return ""
+            
+            # Убираем очевидный мусор в начале/конце
+            cleanup_patterns = [
+                'Question:', 'SQL:', 'Database:', 'Schema:', 'Answer:', 'Explanation:',
+                'Question', 'Database', 'Schema'
+            ]
+            
+            for pattern in cleanup_patterns:
+                if sql_part.startswith(pattern):
+                    sql_part = sql_part[len(pattern):].strip()
+                    print(f"🔍 После удаления префикса '{pattern}': '{sql_part}'")
+            
+            # Окончательная проверка на SQL команды
+            valid_commands = ['SELECT', 'DELETE', 'UPDATE', 'INSERT', 'WITH']
+            starts_with_valid_command = any(sql_part.upper().startswith(cmd) for cmd in valid_commands)
+            
+            if not starts_with_valid_command:
+                # Последняя попытка - ищем команду в середине строки (но только как отдельное слово)
+                found_cmd = False
+                for cmd in valid_commands:
+                    # Ищем команду как отдельное слово (с пробелами или началом/концом строки)
+                    import re
+                    pattern = r'\b' + re.escape(cmd.upper()) + r'\b'
+                    match = re.search(pattern, sql_part.upper())
+                    if match:
+                        cmd_index = match.start()
+                        sql_part = sql_part[cmd_index:]
+                        print(f"🔍 Найдена команда '{cmd}' как отдельное слово в позиции {cmd_index}: '{sql_part}'")
+                        found_cmd = True
+                        break
+                
+                if not found_cmd:
+                    print(f"⚠️  Финальный текст не начинается с SQL команды: '{sql_part[:100]}...'")
                     return ""
             
             # Добавляем LIMIT только для SELECT запросов
             if sql_part.upper().startswith('SELECT') and 'LIMIT' not in sql_part.upper():
                 sql_part += ' LIMIT 1000'
             
+            # Базовая валидация SQL на распространенные ошибки
+            validation_error = self._validate_basic_sql(sql_part)
+            if validation_error:
+                print(f"⚠️  SQL валидация не прошла: {validation_error}")
+                return ""
+            
+            print(f"✅ Извлеченный SQL: '{sql_part}'")
             return sql_part
             
         except Exception as e:
             print(f"❌ Ошибка извлечения SQL из сгенерированного текста: {e}")
+            import traceback
+            traceback.print_exc()
             return ""
     
+    def _get_schema_for_prompt(self) -> str:
+        """Получает схему для промпта (динамическую или статическую)"""
+        if self.use_dynamic_schema and self.dynamic_schema_extractor:
+            try:
+                schema = self.dynamic_schema_extractor.get_schema()
+                # Преобразуем в нужный формат для fine-tuned модели
+                lines = []
+                for table in schema.tables:
+                    table_name = table.name.split('.')[-1] if '.' in table.name else table.name
+                    columns_str = ", ".join([
+                        f"{col.name} ({col.type})" if col.type else col.name
+                        for col in table.columns
+                    ])
+                    lines.append(f"{table_name}: {columns_str}")
+                return "\n".join(lines)
+            except Exception as e:
+                print(f"⚠️  Failed to get dynamic schema, falling back to static: {e}")
+        
+        # Fallback к статической схеме
+        return """customers: id (SERIAL), name (VARCHAR), email (VARCHAR), registration_date (DATE), segment (VARCHAR)
+products: id (SERIAL), name (VARCHAR), price (DECIMAL)
+orders: id (SERIAL), user_id (INTEGER), product_id (INTEGER), quantity (INTEGER), created_at (TIMESTAMP)
+users: id (SERIAL), name (VARCHAR), email (VARCHAR)
+sales: id (SERIAL), order_id (INTEGER), product_id (INTEGER), quantity (INTEGER), revenue (DECIMAL), costs (DECIMAL)
+inventory: id (SERIAL), product_id (INTEGER), current_stock (INTEGER), warehouse (VARCHAR)"""
+
     def _create_prompt(self, user_query: str) -> str:
         """Создает промпт для модели"""
-        # Используем PostgreSQL схему
-        schema = """
-customers: id (SERIAL), name (VARCHAR), email (VARCHAR), registration_date (DATE), segment (VARCHAR)
-products: id (SERIAL), name (VARCHAR), category (VARCHAR), price (DECIMAL), cost (DECIMAL)  
-orders: id (SERIAL), customer_id (INTEGER), order_date (DATE), amount (DECIMAL), status (VARCHAR)
-sales: id (SERIAL), order_id (INTEGER), product_id (INTEGER), quantity (INTEGER), revenue (DECIMAL), costs (DECIMAL)
-inventory: id (SERIAL), product_id (INTEGER), current_stock (INTEGER), warehouse (VARCHAR)
-"""
+        # Получаем актуальную схему
+        schema = self._get_schema_for_prompt()
         
-        prompt = f"""You are a helpful data analyst that writes clean PostgreSQL.
-Return ONLY SQL without comments or explanations.
-
-Database: bi_demo
+        # Улучшенный промпт с примерами для правильной генерации SQL
+        prompt = f"""Database: bi_demo
 Schema:
 {schema.strip()}
+
+Examples:
+Question: покажи всех клиентов
+SQL: SELECT * FROM customers LIMIT 1000
+
+Question: клиенты с заказами
+SQL: SELECT c.name, c.email FROM customers c INNER JOIN orders o ON c.id = o.customer_id LIMIT 1000
 
 Question: {user_query}
 SQL:"""
         
+        print(f"🔍 Созданный промпт (длина {len(prompt)}):")
+        print(f"'{prompt}'")
+        print(f"🔍 Конец промпта")
+        
         return prompt
+    
+    def _validate_basic_sql(self, sql: str) -> str:
+        """Базовая валидация SQL для обнаружения распространенных ошибок"""
+        try:
+            sql_upper = sql.upper()
+            
+            # Проверяем неопределенные алиасы в SELECT запросах
+            if sql_upper.startswith('SELECT'):
+                import re
+                
+                # Ищем алиасы таблиц (TABLE AS ALIAS)
+                alias_pattern = r'\b(\w+)\s+AS\s+(\w+)\b'
+                aliases = {}
+                for match in re.finditer(alias_pattern, sql_upper):
+                    table_name = match.group(1)
+                    alias_name = match.group(2)
+                    aliases[alias_name] = table_name
+                
+                # Ищем использование алиасов в SELECT и других местах
+                select_part = sql_upper.split('FROM')[0] if 'FROM' in sql_upper else sql_upper
+                
+                # Ищем паттерн ALIAS.COLUMN
+                column_refs = re.findall(r'\b([A-Z]\d+)\.', sql_upper)
+                
+                for alias_ref in set(column_refs):
+                    if alias_ref not in aliases:
+                        return f"Неопределенный алиас '{alias_ref}' используется в запросе"
+            
+            # Другие базовые проверки можно добавить здесь
+            
+            return ""  # Нет ошибок
+            
+        except Exception as e:
+            print(f"⚠️  Ошибка валидации SQL: {e}")
+            return ""  # Пропускаем валидацию при ошибке
     
     def _extract_sql(self, generated_text: str, original_prompt: str) -> str:
         """Извлекает SQL из сгенерированного текста"""

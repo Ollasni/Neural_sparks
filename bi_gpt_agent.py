@@ -176,7 +176,7 @@ class SecurityValidator:
 class SQLGenerator:
     """Генератор SQL запросов из естественного языка"""
     
-    def __init__(self, api_key: str = None, base_url: str = None):
+    def __init__(self, api_key: str = None, base_url: str = None, connection_string: str = None, use_dynamic_schema: bool = True):
         # Поддержка как OpenAI, так и локальных моделей
         if base_url:
             # Локальная модель (например, Llama-4-Scout)
@@ -193,6 +193,22 @@ class SQLGenerator:
         self.business_dict = BusinessDictionary()
         self.security = SecurityValidator()
         self.logger = logger  # Добавляем logger для совместимости
+        
+        # Настройка динамической схемы
+        self.use_dynamic_schema = use_dynamic_schema
+        self.dynamic_schema_extractor = None
+        
+        if use_dynamic_schema:
+            try:
+                from dynamic_schema_extractor import create_dynamic_extractor
+                self.dynamic_schema_extractor = create_dynamic_extractor(connection_string)
+                logger.info("Dynamic schema extractor initialized")
+            except ImportError as e:
+                logger.warning(f"Cannot import dynamic schema extractor: {e}")
+                self.use_dynamic_schema = False
+            except Exception as e:
+                logger.warning(f"Failed to initialize dynamic schema extractor: {e}")
+                self.use_dynamic_schema = False
         
         # Few-shot промпт с примерами (сложный)
         self.sql_prompt_few_shot = """
@@ -310,9 +326,93 @@ inventory: id, product_id, current_stock, warehouse
 ЗАПРОС: {user_query}
 SQL:"""
 
+    def _get_schema_for_prompt(self) -> str:
+        """Получает схему для промпта (динамическую или статическую)"""
+        if self.use_dynamic_schema and self.dynamic_schema_extractor:
+            try:
+                schema = self.dynamic_schema_extractor.get_schema()
+                return schema.to_prompt_format()
+            except Exception as e:
+                logger.warning(f"Failed to get dynamic schema, falling back to static: {e}")
+        
+        # Fallback к статической схеме
+        return """orders: id, customer_id, order_date, amount, status
+customers: id, name, email, registration_date, segment  
+products: id, name, category, price, cost
+sales: id, order_id, product_id, quantity, revenue, costs
+inventory: id, product_id, current_stock, warehouse"""
+
+    def _create_few_shot_prompt(self, schema_str: str) -> str:
+        """Создает few-shot промпт с динамической схемой"""
+        return f"""Ты эксперт по PostgreSQL SQL. Переведи запрос на русском языке в точный PostgreSQL SQL запрос.
+
+СХЕМА БАЗЫ ДАННЫХ (PostgreSQL):
+{schema_str}
+
+БИЗНЕС-ТЕРМИНЫ:
+{{business_terms}}
+
+ПРИМЕРЫ SELECT:
+Запрос: "покажи всех клиентов"
+SQL: SELECT * FROM customers LIMIT 1000;
+
+Запрос: "прибыль за последние 2 дня"
+SQL: SELECT SUM(revenue - costs) as profit FROM sales s JOIN orders o ON s.order_id = o.id WHERE o.order_date >= CURRENT_DATE - INTERVAL '2 days' LIMIT 1000;
+
+Запрос: "средний чек клиентов"
+SQL: SELECT AVG(amount) as avg_check FROM orders LIMIT 1000;
+
+Запрос: "остатки товаров на складе"
+SQL: SELECT p.name, i.current_stock, i.warehouse FROM inventory i JOIN products p ON i.product_id = p.id LIMIT 1000;
+
+Запрос: "количество заказов"
+SQL: SELECT COUNT(*) as order_count FROM orders LIMIT 1000;
+
+ПРАВИЛА POSTGRESQL:
+1. Разрешены SELECT, INSERT, UPDATE, DELETE запросы
+2. Для SELECT обязательно LIMIT 1000
+3. Для UPDATE и DELETE всегда используй WHERE клаузулу
+4. Используй правильные JOIN между таблицами
+5. Для дат используй PostgreSQL функции: CURRENT_DATE, CURRENT_TIMESTAMP, INTERVAL
+6. Точные имена полей из схемы PostgreSQL
+7. НЕ используй EXPLAIN, DESCRIBE, SHOW или другие диагностические команды
+8. НЕ используй SELECT TOP (используй LIMIT)
+9. Верни только PostgreSQL SQL код без объяснений
+
+ЗАПРОС: {{user_query}}
+SQL:"""
+
+    def _create_one_shot_prompt(self, schema_str: str) -> str:
+        """Создает one-shot промпт с динамической схемой"""
+        return f"""Ты эксперт по PostgreSQL SQL. Переведи запрос на русском языке в точный PostgreSQL SQL запрос.
+
+СХЕМА БАЗЫ ДАННЫХ (PostgreSQL):
+{schema_str}
+
+БИЗНЕС-ТЕРМИНЫ:
+{{business_terms}}
+
+ПРАВИЛА POSTGRESQL:
+1. Разрешены SELECT, INSERT, UPDATE, DELETE запросы
+2. Для SELECT обязательно LIMIT 1000
+3. Для UPDATE и DELETE всегда используй WHERE клаузулу
+4. Используй правильные JOIN между таблицами
+5. Для дат используй PostgreSQL функции: CURRENT_DATE, CURRENT_TIMESTAMP, INTERVAL
+6. Используй PostgreSQL синтаксис для дат: CURRENT_DATE - INTERVAL 'N days'
+7. Для строк используй одинарные кавычки, для идентификаторов - двойные
+8. НЕ используй EXPLAIN, DESCRIBE, SHOW или другие диагностические команды
+9. НЕ используй SELECT TOP (используй LIMIT)
+10. Верни только PostgreSQL SQL код без объяснений
+
+ЗАПРОС: {{user_query}}
+SQL:"""
+
     def generate_sql(self, user_query: str, temperature: float = 0.0, max_tokens: int = 400, prompt_mode: str = "few_shot") -> Tuple[str, float]:
         """Генерирует SQL запрос из естественного языка"""
         start_time = time.time()
+        
+        # Получаем актуальную схему
+        schema_str = self._get_schema_for_prompt()
         
         # Подготовка бизнес-терминов для промпта
         related_terms = self.business_dict.get_related_terms(user_query)
@@ -321,11 +421,11 @@ SQL:"""
             for term in related_terms
         ])
         
-        # Выбираем промпт в зависимости от режима
+        # Создаем динамический промпт с актуальной схемой
         if prompt_mode == "one_shot":
-            selected_prompt = self.sql_prompt_one_shot
+            selected_prompt = self._create_one_shot_prompt(schema_str)
         else:  # few_shot по умолчанию
-            selected_prompt = self.sql_prompt_few_shot
+            selected_prompt = self._create_few_shot_prompt(schema_str)
         
         try:
             response = self.client.chat.completions.create(
@@ -526,22 +626,38 @@ class BIGPTAgent:
         if provider == 'finetuned' or use_finetuned:
             # Используем fine-tuned модель напрямую
             try:
+                print("🔍 Пытаемся загрузить fine-tuned модель...")
                 from finetuned_sql_generator import FineTunedSQLGenerator
+                print("✅ FineTunedSQLGenerator импортирован успешно")
+                
                 if ENHANCED_FEATURES_AVAILABLE and self.settings:
                     model_config = self.settings.get_model_config()
+                    model_path = model_config.get('model_path', 'finetuning/phi3-mini')
+                    adapter_path = model_config.get('adapter_path', 'finetuning/phi3_bird_lora')
+                    print(f"🔧 Используем пути из настроек: {model_path}, {adapter_path}")
+                    
                     self.sql_generator = FineTunedSQLGenerator(
-                        model_path=model_config.get('model_path', 'finetuning/phi3-mini'),
-                        adapter_path=model_config.get('adapter_path', 'finetuning/phi3_bird_lora')
+                        model_path=model_path,
+                        adapter_path=adapter_path,
+                        connection_string=self.db_url,
+                        use_dynamic_schema=True
                     )
                 else:
-                    self.sql_generator = FineTunedSQLGenerator()
+                    print("🔧 Используем пути по умолчанию")
+                    self.sql_generator = FineTunedSQLGenerator(
+                        connection_string=self.db_url,
+                        use_dynamic_schema=True
+                    )
+                
                 print("✅ Используется fine-tuned модель Phi-3 + LoRA")
                 self.use_finetuned = True
             except Exception as e:
                 print(f"❌ Ошибка загрузки fine-tuned модели: {e}")
+                import traceback
+                traceback.print_exc()  # Печатаем полный стектрейс
                 print("⚠️  Переключаемся на API модель...")
                 if base_url:
-                    self.sql_generator = SQLGenerator(api_key, base_url)
+                    self.sql_generator = SQLGenerator(api_key, base_url, connection_string=self.db_url)
                     print(f"✅ Используется пользовательская API модель: {base_url}")
                 else:
                     print("❌ Не удалось определить API модель для fallback")
@@ -549,7 +665,11 @@ class BIGPTAgent:
                 self.use_finetuned = False
         elif provider == 'openai':
             # Используем OpenAI GPT-4
-            self.sql_generator = SQLGenerator(api_key or os.getenv("OPENAI_API_KEY"))
+            self.sql_generator = SQLGenerator(
+                api_key=api_key or os.getenv("OPENAI_API_KEY"),
+                connection_string=self.db_url,
+                use_dynamic_schema=True
+            )
             print("✅ Используется OpenAI GPT-4")
         else:
             # Используем пользовательскую API модель
@@ -560,7 +680,12 @@ class BIGPTAgent:
                     api_key = model_config.get('api_key')
                     base_url = model_config.get('base_url')
                     
-                    self.sql_generator = SQLGenerator(api_key, base_url)
+                    self.sql_generator = SQLGenerator(
+                        api_key=api_key, 
+                        base_url=base_url,
+                        connection_string=self.db_url,
+                        use_dynamic_schema=True
+                    )
                     print(f"✅ Используется пользовательская API модель: {base_url}")
                 except Exception as e:
                     print(f"❌ Ошибка получения конфигурации: {e}")
@@ -570,13 +695,23 @@ class BIGPTAgent:
                     env_api_key = os.getenv("LOCAL_API_KEY")
                     
                     if env_base_url:
-                        self.sql_generator = SQLGenerator(env_api_key, env_base_url)
+                        self.sql_generator = SQLGenerator(
+                            api_key=env_api_key, 
+                            base_url=env_base_url,
+                            connection_string=self.db_url,
+                            use_dynamic_schema=True
+                        )
                         print(f"✅ Используется пользовательская API модель из env: {env_base_url}")
                     else:
                         raise Exception("Не удалось получить конфигурацию для пользовательской API модели")
             elif base_url:
                 # Fallback для случаев без настроек
-                self.sql_generator = SQLGenerator(api_key, base_url)
+                self.sql_generator = SQLGenerator(
+                    api_key=api_key, 
+                    base_url=base_url,
+                    connection_string=self.db_url,
+                    use_dynamic_schema=True
+                )
                 print(f"✅ Используется пользовательская API модель: {base_url}")
             else:
                 # Последняя попытка - переменные окружения
@@ -585,7 +720,12 @@ class BIGPTAgent:
                 env_api_key = os.getenv("LOCAL_API_KEY")
                 
                 if env_base_url:
-                    self.sql_generator = SQLGenerator(env_api_key, env_base_url)
+                    self.sql_generator = SQLGenerator(
+                        api_key=env_api_key, 
+                        base_url=env_base_url,
+                        connection_string=self.db_url,
+                        use_dynamic_schema=True
+                    )
                     print(f"✅ Используется пользовательская API модель из env: {env_base_url}")
                 else:
                     print("❌ Не указан base_url для пользовательской API модели")

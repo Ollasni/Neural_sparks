@@ -39,3 +39,4 @@ ENV STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
 
 # Команда по умолчанию
 CMD ["python", "launch_app.py", "--model", "integrated", "--port", "8501"]
+

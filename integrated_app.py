@@ -245,22 +245,61 @@ def render_database_connection():
                 try:
                     # Определяем параметры для инициализации агента
                     if model_choice == "Fine-tuned Phi-3 + LoRA":
-                        st.session_state.agent = BIGPTAgent(
-                            use_finetuned=True,
-                            model_provider="finetuned"
-                        )
-                        st.sidebar.success("✅ Подключение успешно! Fine-tuned агент инициализирован.")
+                        try:
+                            # Проверяем доступность fine-tuned генератора
+                            try:
+                                from finetuned_sql_generator import FineTunedSQLGenerator
+                                st.sidebar.info("🔍 Fine-tuned генератор доступен")
+                                
+                                # Проверяем существование путей к модели
+                                import os
+                                model_path = "finetuning/phi3-mini"
+                                adapter_path = "finetuning/phi3_bird_lora"
+                                
+                                if not os.path.exists(model_path):
+                                    st.sidebar.error(f"❌ Базовая модель не найдена: {model_path}")
+                                    st.session_state.agent = None
+                                    return
+                                
+                                if not os.path.exists(adapter_path):
+                                    st.sidebar.error(f"❌ LoRA адаптер не найден: {adapter_path}")
+                                    st.session_state.agent = None
+                                    return
+                                
+                                st.sidebar.info("✅ Пути к модели проверены")
+                                
+                            except ImportError as import_error:
+                                st.sidebar.error(f"❌ Fine-tuned генератор недоступен: {import_error}")
+                                st.session_state.agent = None
+                                return
+                            
+                            st.session_state.agent = BIGPTAgent(
+                                use_finetuned=True,
+                                model_provider="finetuned"
+                            )
+                            st.sidebar.success("✅ Подключение успешно! Fine-tuned агент инициализирован.")
+                        except Exception as e:
+                            st.sidebar.error(f"❌ Ошибка инициализации fine-tuned модели: {str(e)}")
+                            st.sidebar.code(f"Детали ошибки:\n{str(e)}")
+                            
+                            # Предлагаем альтернативу
+                            st.sidebar.warning("💡 Попробуйте использовать Custom API Model вместо Fine-tuned модели")
+                            st.session_state.agent = None
                     else:
                         # Custom API Model
                         if not api_key:
                             st.sidebar.error("❌ Для Custom API нужен API ключ")
                         else:
-                            st.session_state.agent = BIGPTAgent(
-                                api_key=api_key,
-                                base_url=api_url,
-                                model_provider="local"
-                            )
-                            st.sidebar.success("✅ Подключение успешно! Custom API агент инициализирован.")
+                            try:
+                                st.session_state.agent = BIGPTAgent(
+                                    api_key=api_key,
+                                    base_url=api_url,
+                                    model_provider="local"
+                                )
+                                st.sidebar.success("✅ Подключение успешно! Custom API агент инициализирован.")
+                            except Exception as e:
+                                st.sidebar.error(f"❌ Ошибка инициализации Custom API: {str(e)}")
+                                st.session_state.agent = None
                 except Exception as e:
                     st.sidebar.warning(f"⚠️ Подключение к БД успешно, но агент не инициализирован: {e}")
             else:
